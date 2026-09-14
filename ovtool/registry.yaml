@@ -216,6 +216,29 @@ models:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert llm openbmb/MiniCPM5-1B -o ./minicpm5-1b-fp16 --weight-format fp16"
 
+  - id: openbmb/MiniCPM5-2B
+    kind: llm
+    match: ["minicpm5-2b", "minicpm5_2b"]
+    variants:
+      int4-asym-g128:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm openbmb/MiniCPM5-2B -o ./minicpm5-2b-int4 --weight-format int4"
+        note: ~32 tok/s on iGPU (LlamaForCausalLM, 2048x42)
+      int4-sym-g128:
+        devices: [CPU, GPU, NPU, AUTO]
+        convert: "ovtool convert llm openbmb/MiniCPM5-2B -o ./minicpm5-2b-int4-sym --weight-format int4 --sym"
+        note: NPU-ready; verified ~14 tok/s on NPU 3720
+      int4-awq-g128:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm openbmb/MiniCPM5-2B -o ./minicpm5-2b-awq --weight-format int4 --awq"
+        note: fastest — ~37 tok/s on iGPU
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm openbmb/MiniCPM5-2B -o ./minicpm5-2b-int8 --weight-format int8"
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm openbmb/MiniCPM5-2B -o ./minicpm5-2b-fp16 --weight-format fp16"
+
   - id: stabilityai/sd-turbo
     kind: image
     match: ["sd-turbo"]
