@@ -149,6 +149,29 @@ models:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert vlm Qwen/Qwen3.5-2B -o ./qwen35-2b-fp16 --weight-format fp16"
 
+  - id: Qwen/Qwen3.5-4B
+    kind: vlm
+    match: ["qwen3.5-4b", "qwen3_5-4b"]
+    text_only: true
+    variants:
+      int4-asym-g128:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm Qwen/Qwen3.5-4B -o ./qwen35-4b-int4 --weight-format int4"
+        note: ~19 tok/s on iGPU
+      int4-sym-g128:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm Qwen/Qwen3.5-4B -o ./qwen35-4b-int4-sym --weight-format int4 --sym"
+      int4-awq-g128:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm Qwen/Qwen3.5-4B -o ./qwen35-4b-awq --weight-format int4 --awq"
+        note: fastest — ~21 tok/s on iGPU
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm Qwen/Qwen3.5-4B -o ./qwen35-4b-int8 --weight-format int8"
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm Qwen/Qwen3.5-4B -o ./qwen35-4b-fp16 --weight-format fp16"
+
   - id: Qwen/Qwen3-VL-2B-Instruct
     kind: vlm
     match: ["qwen3-vl-2b", "qwen3_vl-2b"]
