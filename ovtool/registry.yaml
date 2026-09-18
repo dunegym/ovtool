@@ -19,27 +19,6 @@
 schema_version: 1
 
 models:
-  - id: Qwen/Qwen2.5-0.5B-Instruct
-    kind: llm
-    match: ["qwen2.5-0.5b", "qwen2_5-0.5b"]
-    variants:
-      int4-asym-g128:
-        devices: [CPU, GPU, AUTO]
-        convert: "ovtool convert llm Qwen/Qwen2.5-0.5B-Instruct -o ./qwen05-int4 --weight-format int4"
-      int4-sym-g128:
-        devices: [CPU, GPU, NPU, AUTO]
-        convert: "ovtool convert llm Qwen/Qwen2.5-0.5B-Instruct -o ./qwen05-int4-sym --weight-format int4 --sym"
-        note: NPU-ready (symmetric INT4)
-      int4-awq-g128:
-        devices: [CPU, GPU, AUTO]
-        convert: "ovtool convert llm Qwen/Qwen2.5-0.5B-Instruct -o ./qwen05-awq --weight-format int4 --awq"
-      int8:
-        devices: [CPU, GPU, AUTO]
-        convert: "ovtool convert llm Qwen/Qwen2.5-0.5B-Instruct -o ./qwen05-int8 --weight-format int8"
-      fp16:
-        devices: [CPU, GPU, AUTO]
-        convert: "ovtool convert llm Qwen/Qwen2.5-0.5B-Instruct -o ./qwen05-fp16 --weight-format fp16"
-
   - id: Qwen/Qwen3-0.6B
     kind: llm
     match: ["qwen3-0.6b", "qwen3_0.6b"]

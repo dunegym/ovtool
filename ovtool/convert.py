@@ -255,7 +255,7 @@ def add_convert_parser(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("convert", help="Convert a HF model to OpenVINO IR with optional quantization",
                        description="Convert/quantize a Hugging Face model with optimum-intel. "
                                    "Examples:\n"
-                                   "  ovtool convert llm Qwen/Qwen2.5-0.5B-Instruct -m ./qwen05-int4\n"
+                                   "  ovtool convert llm Qwen/Qwen3-0.6B -o ./qwen3-06b-int4\n"
                                    "  ovtool convert vlm openbmb/MiniCPM-V-2_6 -m ./minicpmv-int4 --weight-format int4 --sym\n"
                                    "  ovtool convert image stabilityai/sd-turbo -m ./sd-turbo-ir --weight-format int8",
                        formatter_class=argparse.RawDescriptionHelpFormatter)

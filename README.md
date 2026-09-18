@@ -27,13 +27,13 @@ After installation the command entry point is `ovtool` (equivalent to `python -m
 ovtool devices
 
 # 2. Convert + INT4-quantize an LLM (downloaded from Hugging Face)
-ovtool convert llm Qwen/Qwen2.5-0.5B-Instruct -m ./qwen05-int4
+ovtool convert llm Qwen/Qwen3-0.6B -o ./qwen3-06b-int4
 
 # 3. One-shot generation
-ovtool generate -m ./qwen05-int4 -d CPU "Describe OpenVINO in one sentence"
+ovtool generate -m ./qwen3-06b-int4 -d CPU "Describe OpenVINO in one sentence"
 
 # 4. Interactive multi-turn chat
-ovtool chat -m ./qwen05-int4 -d GPU --opt perf_mode=LOW_LATENCY
+ovtool chat -m ./qwen3-06b-int4 -d GPU --opt perf_mode=LOW_LATENCY
 ```
 
 ## Subcommand Reference
@@ -173,7 +173,6 @@ ovtool/
 ## Verified (local machine: Core Ultra 5 125H + Arc Pro iGPU + NPU 3720)
 
 - `devices` / `--help` for all subcommands: ✅
-- LLM conversion + INT4 quantization (Qwen2.5-0.5B-Instruct, 322MB int4 IR): ✅
 - LLM conversion + INT4 quantization (**Qwen3-0.6B**, reasoning model): ✅ ~55 tok/s on GPU, multi-turn chat OK on CPU, math comparison answered correctly
 - `generate` one-shot generation (CPU / GPU, streaming & non-streaming, `--stats`, `--opt perf_mode=...`): ✅ (~50 tok/s @0.5B-int4 on iGPU)
 - `chat` multi-turn interaction (incl. `/exit` `/reset` `/system`): ✅

@@ -14,8 +14,8 @@ def main(argv: list[str] | None = None) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Typical workflow:\n"
                "  ovtool devices\n"
-               "  ovtool convert llm Qwen/Qwen2.5-0.5B-Instruct -m ./qwen05-int4\n"
-               "  ovtool chat -m ./qwen05-int4 -d GPU --opt perf_mode=LOW_LATENCY\n"
+               "  ovtool convert llm Qwen/Qwen3-0.6B -o ./qwen3-06b-int4\n"
+               "  ovtool chat -m ./qwen3-06b-int4 -d GPU --opt perf_mode=LOW_LATENCY\n"
                "  ovtool image -m ./sd-turbo-int8 \"a corgi surfing a wave\" --steps 8 --seed 42\n")
     parser.add_argument("--version", action="version", version=f"ovtool {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
