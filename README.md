@@ -3,6 +3,7 @@
 A multi-purpose inference CLI built on [OpenVINO GenAI](https://github.com/openvinotoolkit/openvino.genai), supporting:
 
 - **LLM inference**: one-shot generation + interactive multi-turn chat, streaming output, full sampling controls
+- **OpenAI-compatible API server**: expose a converted LLM behind `POST /v1/chat/completions` (incl. SSE streaming), `POST /v1/completions` and `GET /v1/models`
 - **Multimodal (VLM) inference**: image + text Q&A (converted LLaVA / Qwen-VL / MiniCPM-V / InternVL models)
 - **Image generation**: Text2Image and Image2Image with the SD / SDXL / Flux families
 - **Device selection & runtime options**: CPU / GPU / NPU / AUTO / HETERO, with pass-through OpenVINO runtime properties
@@ -95,6 +96,36 @@ Generation parameters: `--max-new-tokens`, `--temperature` (>0 enables sampling)
 
 Chat-mode built-in commands: `/exit` to quit, `/reset` to clear history, `/system <text>` to set the system prompt.
 
+### `ovtool serve` (OpenAI-compatible API)
+
+Serves a converted LLM behind an OpenAI-format HTTP API, so any OpenAI client
+library / tool can use it directly:
+
+```bash
+ovtool serve -m ./qwen3-06b-int4 -d GPU --port 8000
+```
+
+| Endpoint | Notes |
+|---|---|
+| `POST /v1/chat/completions` | `messages` / `stream` (SSE) / `temperature` / `top_p` / `top_k` / `max_tokens` (also `max_completion_tokens`) / `stop` / `seed` / `n` (≤8) / `stream_options.include_usage` |
+| `POST /v1/completions` | legacy text completions, same sampling params |
+| `GET /v1/models`, `GET /health` | served-model listing / liveness |
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="ovtool")
+resp = client.chat.completions.create(
+    model="any", messages=[{"role": "user", "content": "hello"}])
+```
+
+Implementation notes: the chat template is rendered per request via the
+model's own tokenizer (`apply_chat_template`), so the server is stateless and
+safe across clients; a single pipeline is shared and generation is serialized
+with a lock. `usage` token counts come from GenAI perf metrics. Optional
+`--api-key KEY` requires `Authorization: Bearer KEY` on every request.
+Tools/function calling, `logprobs` and image content are rejected with a 400
+(use `ovtool vlm` for multimodal).
+
 ### `ovtool vlm` (Multimodal)
 
 ```bash
@@ -134,6 +165,7 @@ ovtool/
 ├── devices.py    # Device enumeration / validation
 ├── convert.py    # optimum-intel export + weight quantization
 ├── llm.py        # LLMPipeline: generate / chat
+├── server.py     # OpenAI-compatible API server (serve)
 ├── vlm.py        # VLMPipeline: image-text multimodal
 └── imagegen.py   # Text2Image / Image2Image
 ```
