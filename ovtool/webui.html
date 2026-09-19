@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ovtool webui</title>
+<style>
+  :root {
+    --bg: #101418; --panel: #171d24; --panel2: #1e2630; --line: #2a3542;
+    --text: #dce5ee; --dim: #8496a8; --accent: #4da3ff; --ok: #3ecf8e;
+    --warn: #f0b429; --err: #ff6b6b; --mono: ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, "Segoe UI", sans-serif; height: 100vh;
+         display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 14px; padding: 10px 18px;
+           background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .tag { font-family: var(--mono); font-size: 11px; color: var(--dim);
+                border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; }
+  #status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--err);
+                display: inline-block; margin-right: 6px; }
+  #status-dot.ok { background: var(--ok); } #status-dot.busy { background: var(--warn); }
+  main { flex: 1; display: flex; min-height: 0; }
+  /* sidebar */
+  #sidebar { width: 300px; background: var(--panel); border-right: 1px solid var(--line);
+             padding: 14px; overflow-y: auto; flex-shrink: 0; }
+  #sidebar h2 { font-size: 12px; text-transform: uppercase; color: var(--dim);
+                margin: 4px 0 8px; letter-spacing: .08em; }
+  select, input[type=text], input[type=number] { width: 100%; background: var(--panel2);
+    color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 9px; font-size: 13px; margin-bottom: 8px; }
+  select:focus, input:focus { outline: 1px solid var(--accent); }
+  .row { display: flex; gap: 8px; } .row > * { flex: 1; }
+  .kind-group { margin-bottom: 10px; }
+  .kind-label { font-size: 11px; color: var(--dim); margin: 6px 0 3px;
+                font-family: var(--mono); }
+  button { background: var(--accent); color: #08121e; border: 0; border-radius: 6px;
+           padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  button.sec { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #seg-box { display: none; }
+  #seg-box.show { display: block; }
+  .hint { font-size: 11px; color: var(--dim); margin: -4px 0 8px; }
+  #slot-info { font-family: var(--mono); font-size: 11px; color: var(--dim);
+               border: 1px dashed var(--line); border-radius: 6px; padding: 8px;
+               margin-top: 10px; white-space: pre-wrap; word-break: break-all; }
+  #slot-error { color: var(--err); margin-top: 8px; font-size: 12px;
+                white-space: pre-wrap; display: none; }
+  /* tabs + panes */
+  #tabs { display: flex; gap: 4px; padding: 8px 18px 0; background: var(--bg); }
+  .tab { padding: 8px 16px; border: 1px solid var(--line); border-bottom: 0;
+         border-radius: 8px 8px 0 0; color: var(--dim); cursor: pointer;
+         background: var(--panel); user-select: none; }
+  .tab.active { color: var(--text); background: var(--panel2);
+                border-color: var(--accent); }
+  #panes { flex: 1; border-top: 1px solid var(--line); margin: 0 18px 14px;
+           background: var(--panel); border-radius: 0 8px 8px 8px; display: flex;
+           min-height: 0; }
+  .pane { display: none; flex: 1; min-height: 0; flex-direction: column; padding: 14px; }
+  .pane.active { display: flex; }
+  /* chat */
+  #messages { flex: 1; overflow-y: auto; padding: 6px 4px; }
+  .msg { max-width: 82%; margin: 6px 0; padding: 9px 13px; border-radius: 10px;
+         white-space: pre-wrap; word-break: break-word; }
+  .msg.user { background: #24466e; margin-left: auto; }
+  .msg.assistant { background: var(--panel2); border: 1px solid var(--line); }
+  .msg.system { background: transparent; color: var(--dim); font-size: 12px;
+                text-align: center; margin: 2px auto; }
+  .msg img { max-width: 200px; border-radius: 6px; margin-top: 6px; }
+  .cursor { display: inline-block; width: 7px; height: 15px; background: var(--accent);
+            animation: blink 1s step-start infinite; vertical-align: text-bottom; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #chat-form { display: flex; gap: 8px; margin-top: 10px; }
+  #chat-input { flex: 1; resize: none; min-height: 44px; max-height: 160px; }
+  #chat-params { display: flex; gap: 10px; margin-top: 8px; align-items: center;
+                 font-size: 12px; color: var(--dim); flex-wrap: wrap; }
+  #chat-params input { width: 70px; margin: 0; padding: 4px 6px; }
+  #chat-params label { display: flex; align-items: center; gap: 5px; }
+  .attach-thumb { height: 30px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+  /* image */
+  #img-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  #img-form .full { grid-column: 1 / -1; }
+  #img-form label { font-size: 11px; color: var(--dim); display: block; margin-bottom: 3px; }
+  #gallery { flex: 1; overflow-y: auto; display: grid;
+             grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px;
+             margin-top: 14px; align-content: start; }
+  #gallery figure { margin: 0; }
+  #gallery img { width: 100%; border-radius: 8px; border: 1px solid var(--line); }
+  #gallery figcaption { font-size: 11px; color: var(--dim); font-family: var(--mono);
+                        margin-top: 4px; word-break: break-all; }
+  .spin { border: 3px solid var(--line); border-top-color: var(--accent);
+          border-radius: 50%; width: 26px; height: 26px; margin: 30px auto;
+          animation: rot 0.8s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  /* devices table */
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; }
+  code { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ovtool webui</h1>
+  <span class="tag" id="slot-tag">no model</span>
+  <span id="status-dot"></span><span id="status-text" style="color:var(--dim)">idle</span>
+</header>
+<main>
+  <aside id="sidebar">
+    <h2>Model</h2>
+    <div id="catalog"><div class="spin"></div></div>
+    <h2>Device</h2>
+    <select id="device"></select>
+    <div id="seg-box">
+      <div class="kind-label">segmented (image only)</div>
+      <input type="text" id="seg-devices" placeholder="NPU,NPU,GPU">
+      <div class="row">
+        <div><label class="hint">W</label><input type="number" id="seg-w" value="512"></div>
+        <div><label class="hint">H</label><input type="number" id="seg-h" value="512"></div>
+        <div><label class="hint">cfg</label><input type="number" id="seg-cfg" value="7.5" step="0.5"></div>
+      </div>
+      <p class="hint">static geometry fixed at load; VAE stays off NPU</p>
+    </div>
+    <div class="row">
+      <button id="btn-load">Load</button>
+      <button id="btn-unload" class="sec">Unload</button>
+    </div>
+    <div id="slot-error"></div>
+    <div id="slot-info">load a model to begin</div>
+  </aside>
+  <section style="flex:1; display:flex; flex-direction:column; min-width:0;">
+    <div id="tabs">
+      <div class="tab active" data-pane="chat">Chat</div>
+      <div class="tab" data-pane="image">Image</div>
+      <div class="tab" data-pane="devices">Devices</div>
+    </div>
+    <div id="panes">
+      <div class="pane active" id="pane-chat">
+        <div id="messages"></div>
+        <div id="chat-params">
+          <label>max <input id="p-max" type="number" value="512" min="1"></label>
+          <label>temp <input id="p-temp" type="number" value="0" min="0" step="0.1"></label>
+          <label>top_p <input id="p-topp" type="number" value="" placeholder="1" step="0.05"></label>
+          <label>seed <input id="p-seed" type="number" value=""></label>
+          <label><input id="p-stream" type="checkbox" checked> stream</label>
+          <button class="sec" id="btn-clear" style="padding:4px 10px">clear</button>
+        </div>
+        <div id="chat-form">
+          <textarea id="chat-input" class=" " placeholder="Type a message… (Enter to send, Shift+Enter for newline)"></textarea>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <input type="file" id="img-attach" accept="image/*" style="display:none">
+            <button class="sec" id="btn-attach" style="padding:6px 10px">📷</button>
+            <button id="btn-send">Send</button>
+          </div>
+        </div>
+      </div>
+      <div class="pane" id="pane-image">
+        <div id="img-form">
+          <input type="text" id="i-prompt" class="full" placeholder="Prompt, e.g. a corgi surfing a wave">
+          <input type="text" id="i-neg" class="full" placeholder="Negative prompt (optional)">
+          <div><label>width</label><input type="number" id="i-w" value="512" step="64"></div>
+          <div><label>height</label><input type="number" id="i-h" value="512" step="64"></div>
+          <div><label>steps</label><input type="number" id="i-steps" value="20"></div>
+          <div><label>guidance</label><input type="number" id="i-cfg" value="7.5" step="0.5"></div>
+          <div><label>images</label><input type="number" id="i-num" value="1" min="1" max="8"></div>
+          <div><label>seed</label><input type="number" id="i-seed" placeholder="random"></div>
+          <div style="display:flex;align-items:flex-end"><button id="btn-gen" style="width:100%">Generate</button></div>
+        </div>
+        <div id="gallery"></div>
+      </div>
+      <div class="pane" id="pane-devices">
+        <table id="dev-table">
+          <thead><tr><th>Device</th><th>Name</th><th>Type</th><th>Driver</th><th>Subdevices</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let catalog = [], attachedImages = [], pollTimer = null, generating = false;
+
+/* ---------------- tabs ---------------- */
+for (const tab of document.querySelectorAll(".tab"))
+  tab.onclick = () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
+    document.querySelectorAll(".pane").forEach(p =>
+      p.classList.toggle("active", p.id === "pane-" + tab.dataset.pane));
+    if (tab.dataset.pane === "devices") refreshDevices();
+  };
+
+/* ---------------- catalog & devices ---------------- */
+async function refreshCatalog() {
+  catalog = await (await fetch("/api/models")).json();
+  const box = $("catalog"); box.innerHTML = "";
+  for (const group of catalog) {
+    const g = document.createElement("div"); g.className = "kind-group";
+    g.innerHTML = `<div class="kind-label">${group.kind}</div>`;
+    for (const v of group.variants) {
+      const sel = document.createElement("select");
+      sel.className = "variant";
+      const def = document.createElement("option");
+      def.value = ""; def.textContent = `${group.name} — ${v.name} (${v.size_gb} GB)`;
+      sel.appendChild(def);
+      sel.onclick = () => { if (!sel.value) sel.value = v.path; };
+      // single-shot select: clicking an option of the group's hidden list is
+      // clunky, so render one <select> per variant holding just that variant
+      sel.value = v.path;
+      sel.dataset.kind = group.kind; sel.dataset.path = v.path;
+      sel.disabled = true; sel.style.display = "none";
+      const btn = document.createElement("button");
+      btn.className = "sec"; btn.style.cssText = "display:block;width:100%;margin-bottom:6px;text-align:left;font-weight:400";
+      btn.textContent = `${v.name}  ·  ${v.size_gb} GB`;
+      btn.onclick = () => pickVariant(group.kind, v.path, v.name, btn, g);
+      g.appendChild(btn); g.appendChild(sel);
+    }
+    box.appendChild(g);
+  }
+  if (!catalog.length)
+    box.innerHTML = '<p class="hint">no models found under the models dir</p>';
+}
+
+let picked = null;
+function pickVariant(kind, path, name, btn, group) {
+  picked = { kind, path, name };
+  group.querySelectorAll("button").forEach(b =>
+    b.style.borderColor = b === btn ? "var(--accent)" : "var(--line)");
+  $("seg-box").classList.toggle("show", kind === "image");
+  updateSlotInfo(`selected: ${kind}/${name}`);
+}
+
+async function refreshDevices() {
+  const devs = await (await fetch("/api/devices")).json();
+  const sel = $("device");
+  const known = ["CPU", "GPU", "NPU", "AUTO"];
+  const names = devs.map(d => d.device);
+  for (const d of [...known.filter(k => names.includes(k) || k === "AUTO"),
+                   ...names.filter(n => !known.includes(n))]) {
+    const o = document.createElement("option"); o.value = d;
+    o.textContent = d; if (d === "GPU") o.selected = true;
+    sel.appendChild(o);
+  }
+  const tb = $("dev-table").querySelector("tbody"); tb.innerHTML = "";
+  for (const d of devs) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><code>${d.device}</code></td><td>${d.full_device_name || "?"}</td>
+      <td>${d.device_type || ""}</td><td>${d.driver_version || "?"}</td>
+      <td>${(d.subdevices || []).join(", ") || "-"}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+/* ---------------- load / status ---------------- */
+async function loadModel() {
+  if (!picked) return alert("pick a model first");
+  const body = { path: picked.path, kind: picked.kind, device: $("device").value };
+  if (picked.kind === "image") {
+    const seg = $("seg-devices").value.trim();
+    if (seg) Object.assign(body, { devices: seg, width: +$("seg-w").value,
+      height: +$("seg-h").value, guidance_scale: +$("seg-cfg").value, num_images: 1 });
+  }
+  const r = await (await fetch("/api/load", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body) })).json();
+  if (r.error) return showSlotError(r.error);
+  showSlotError(null); startPolling();
+}
+
+function startPolling() {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    const s = await (await fetch("/api/status")).json();
+    renderStatus(s);
+    if (!s.loading) clearInterval(pollTimer);
+  }, 1200);
+}
+
+function renderStatus(s) {
+  const dot = $("status-dot"), txt = $("status-text"), tag = $("slot-tag");
+  dot.className = s.loading ? "busy" : (s.loaded ? "ok" : "");
+  txt.textContent = s.loading ? "loading…" : (s.loaded ? "ready" : (s.error ? "error" : "idle"));
+  tag.textContent = s.loaded || s.loading
+    ? `${s.kind}:${s.name}${s.devices ? " [" + s.devices.join(",") + "]" : " on " + s.device}`
+    : "no model";
+  if (s.error && !s.loading) showSlotError(s.error);
+  if (s.loaded) {
+    showSlotError(null);
+    const geo = s.geometry ? `\nstatic: ${s.geometry.width}x${s.geometry.height} cfg=${s.geometry.guidance_scale}` : "";
+    updateSlotInfo(`${s.path}\non ${s.devices ? s.devices.join(",") : s.device}${geo}`);
+    if (s.geometry) { $("i-w").value = s.geometry.width; $("i-h").value = s.geometry.height;
+      $("i-cfg").value = s.geometry.guidance_scale; }
+    const isVlm = s.kind === "vlm";
+    $("btn-attach").style.display = isVlm ? "" : "none";
+    const isImg = s.kind === "image";
+    document.querySelector('[data-pane="chat"]').style.opacity = isImg ? .4 : 1;
+    document.querySelector('[data-pane="image"]').style.opacity = isImg ? 1 : .4;
+  }
+}
+
+function updateSlotInfo(t) { $("slot-info").textContent = t; }
+function showSlotError(e) {
+  const el = $("slot-error");
+  el.style.display = e ? "block" : "none"; el.textContent = e || "";
+}
+
+$("btn-load").onclick = loadModel;
+$("btn-unload").onclick = async () => {
+  await fetch("/api/unload", { method: "POST" });
+  const s = await (await fetch("/api/status")).json(); renderStatus(s);
+  updateSlotInfo("load a model to begin");
+};
+
+/* ---------------- chat ---------------- */
+const messagesEl = $("messages");
+let history = [];
+
+function addMsg(role, content, imgs) {
+  const div = document.createElement("div");
+  div.className = "msg " + role; div.textContent = content || "";
+  if (imgs) for (const src of imgs) {
+    const im = document.createElement("img"); im.src = src; div.appendChild(im);
+  }
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+$("img-attach").onchange = (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { attachedImages.push(rd.result); addMsg("user", f.name, [rd.result]); };
+  rd.readAsDataURL(f); e.target.value = "";
+};
+$("btn-attach").onclick = () => $("img-attach").click();
+$("btn-clear").onclick = () => { history = []; messagesEl.innerHTML = ""; };
+
+async function send() {
+  const text = $("chat-input").value.trim();
+  if (!text || generating) return;
+  $("chat-input").value = "";
+  const imgs = attachedImages; attachedImages = [];
+  addMsg("user", text, imgs.length ? imgs.map(b64ToThumb) : undefined);
+  history.push({ role: "user", content: text });
+  const params = { max_tokens: +$("p-max").value || 512 };
+  if ($("p-temp").value !== "") params.temperature = +$("p-temp").value;
+  if ($("p-topp").value !== "") params.top_p = +$("p-topp").value;
+  if ($("p-seed").value !== "") params.seed = +$("p-seed").value;
+  const body = { messages: history, params, stream: $("p-stream").checked };
+  if (imgs.length) body.images = imgs;
+
+  generating = true; $("btn-send").disabled = true;
+  const bubble = addMsg("assistant", "");
+  const cursor = document.createElement("span"); cursor.className = "cursor";
+  bubble.appendChild(cursor);
+  let acc = "";
+  try {
+    const resp = await fetch("/api/chat", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!resp.ok || !$("p-stream").checked) {
+      const j = await resp.json();
+      if (j.error) throw new Error(j.error);
+      acc = j.content; bubble.textContent = acc;
+    } else {
+      const reader = resp.body.getReader(), dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const ev = buf.slice(0, idx); buf = buf.slice(idx + 2);
+          if (!ev.startsWith("data: ")) continue;
+          const payload = ev.slice(6);
+          if (payload === "[DONE]") { buf = ""; break; }
+          const obj = JSON.parse(payload);
+          if (obj.delta) { acc += obj.delta; bubble.textContent = acc;
+            bubble.appendChild(cursor);
+            messagesEl.scrollTop = messagesEl.scrollHeight; }
+          if (obj.usage) bubble.title =
+            `${obj.usage.prompt_tokens}+${obj.usage.completion_tokens} tokens · ${obj.finish_reason}`;
+        }
+      }
+    }
+    history.push({ role: "assistant", content: acc });
+  } catch (e) {
+    bubble.textContent = acc || ("error: " + e.message);
+    history.pop(); // do not keep the user turn on failure
+  } finally {
+    cursor.remove(); generating = false; $("btn-send").disabled = false;
+  }
+}
+function b64ToThumb(src) { return src; }
+$("btn-send").onclick = send;
+$("chat-input").onkeydown = (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+};
+
+/* ---------------- image ---------------- */
+$("btn-gen").onclick = async () => {
+  if (generating) return;
+  const body = { prompt: $("i-prompt").value, negative_prompt: $("i-neg").value,
+    width: +$("i-w").value, height: +$("i-h").value, steps: +$("i-steps").value,
+    guidance_scale: +$("i-cfg").value, num_images: +$("i-num").value };
+  if ($("i-seed").value !== "") body.seed = +$("i-seed").value;
+  generating = true; $("btn-gen").disabled = true;
+  const gal = $("gallery");
+  gal.insertAdjacentHTML("afterbegin", '<div class="spin" data-spin></div>');
+  try {
+    const r = await (await fetch("/api/image", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+    if (r.error) throw new Error(r.error);
+    gal.querySelector("[data-spin]").remove();
+    for (let i = 0; i < r.images.length; i++) {
+      gal.insertAdjacentHTML("afterbegin",
+        `<figure><img src="${r.images[i]}">
+         <figcaption>${body.prompt.slice(0, 60)} · ${r.elapsed_s}s · ${r.saved[i]}</figcaption></figure>`);
+    }
+  } catch (e) {
+    const sp = gal.querySelector("[data-spin]"); if (sp) sp.remove();
+    alert("generation failed: " + e.message);
+  } finally { generating = false; $("btn-gen").disabled = false; }
+};
+
+/* ---------------- boot ---------------- */
+refreshCatalog(); refreshDevices();
+fetch("/api/status").then(r => r.json()).then(renderStatus);
+startPolling();
+</script>
+</body>
+</html>

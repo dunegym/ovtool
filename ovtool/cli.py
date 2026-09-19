@@ -46,6 +46,10 @@ def main(argv: list[str] | None = None) -> None:
     from .server import add_parser as add_serve_parser
     add_serve_parser(sub)
 
+    # webui
+    from .webui import add_parser as add_webui_parser
+    add_webui_parser(sub)
+
     # image
     from .imagegen import add_parsers as add_image_parsers
     add_image_parsers(sub)

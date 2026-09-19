@@ -4,6 +4,7 @@ A multi-purpose inference CLI built on [OpenVINO GenAI](https://github.com/openv
 
 - **LLM inference**: one-shot generation + interactive multi-turn chat, streaming output, full sampling controls
 - **OpenAI-compatible API server**: expose a converted LLM behind `POST /v1/chat/completions` (incl. SSE streaming), `POST /v1/completions` and `GET /v1/models`
+- **Browser WebUI**: pick any converted model, load it on a device and chat / generate images from the browser (`ovtool webui`)
 - **Multimodal (VLM) inference**: image + text Q&A (converted LLaVA / Qwen-VL / MiniCPM-V / InternVL models)
 - **Image generation**: Text2Image and Image2Image with the SD / SDXL / Flux families
 - **Device selection & runtime options**: CPU / GPU / NPU / AUTO / HETERO, with pass-through OpenVINO runtime properties
@@ -126,6 +127,30 @@ with a lock. `usage` token counts come from GenAI perf metrics. Optional
 Tools/function calling, `logprobs` and image content are rejected with a 400
 (use `ovtool vlm` for multimodal).
 
+### `ovtool webui` (Browser UI)
+
+```bash
+ovtool webui --port 7860 --models-dir ./models
+```
+
+Opens a single-page UI (no build step, no CDN dependencies) over the models
+directory (`<kind>/<model>/<variant>/` layout, same as the
+[openvino-models](https://huggingface.co/dunegym/openvino-models) repo):
+
+- **Chat tab** — pick an llm/vlm variant + device, Load, then multi-turn chat
+  with SSE streaming, sampling params and token usage; VLM models can take
+  image attachments (subject to the same GenAI image-input limitation)
+- **Image tab** — pick a diffusion variant, generate with prompt / size /
+  steps / guidance / seed controls; segmented loading (`TE,DENOISE,VAE`, e.g.
+  `NPU,NPU,GPU`) fixes static geometry at load time, mirroring `--devices`
+- **Devices tab** — live OpenVINO device table
+
+One pipeline is resident at a time (loading runs in a background thread, the
+UI polls status); switching models unloads the previous one. Every load goes
+through the compatibility registry, so known-bad combos (e.g. asymmetric INT4
+on NPU) fail fast with the registry's guidance. Backend is stdlib-only,
+reusing the serve implementation for chat templating.
+
 ### `ovtool vlm` (Multimodal)
 
 ```bash
@@ -179,6 +204,7 @@ ovtool/
 ├── convert.py    # optimum-intel export + weight quantization
 ├── llm.py        # LLMPipeline: generate / chat
 ├── server.py     # OpenAI-compatible API server (serve)
+├── webui.py/.html# Browser UI (webui)
 ├── vlm.py        # VLMPipeline: image-text multimodal
 └── imagegen.py   # Text2Image / Image2Image
 ```

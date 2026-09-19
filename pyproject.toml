@@ -28,4 +28,4 @@ ovtool = "ovtool.cli:main"
 include = ["ovtool*"]
 
 [tool.setuptools.package-data]
-ovtool = ["registry.yaml"]
+ovtool = ["registry.yaml", "webui.html"]
