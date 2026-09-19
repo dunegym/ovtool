@@ -33,7 +33,6 @@
     padding: 7px 9px; font-size: 13px; margin-bottom: 8px; }
   select:focus, input:focus { outline: 1px solid var(--accent); }
   .row { display: flex; gap: 8px; } .row > * { flex: 1; }
-  .kind-group { margin-bottom: 10px; }
   .kind-label { font-size: 11px; color: var(--dim); margin: 6px 0 3px;
                 font-family: var(--mono); }
   button { background: var(--accent); color: #08121e; border: 0; border-radius: 6px;
@@ -111,7 +110,14 @@
 <main>
   <aside id="sidebar">
     <h2>Model</h2>
-    <div id="catalog"><div class="spin"></div></div>
+    <div class="kind-label">category</div>
+    <select id="sel-kind"></select>
+    <div class="kind-label">model</div>
+    <select id="sel-model"></select>
+    <div class="kind-label">quantization</div>
+    <select id="sel-variant"></select>
+    <div id="catalog-empty" style="display:none" class="hint">
+      no models found under the models dir</div>
     <h2>Device</h2>
     <select id="device"></select>
     <div id="seg-box">
@@ -183,7 +189,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-let catalog = [], attachedImages = [], pollTimer = null, generating = false;
+let attachedImages = [], pollTimer = null, generating = false;
 
 /* ---------------- tabs ---------------- */
 for (const tab of document.querySelectorAll(".tab"))
@@ -195,44 +201,80 @@ for (const tab of document.querySelectorAll(".tab"))
   };
 
 /* ---------------- catalog & devices ---------------- */
-async function refreshCatalog() {
-  catalog = await (await fetch("/api/models")).json();
-  const box = $("catalog"); box.innerHTML = "";
-  for (const group of catalog) {
-    const g = document.createElement("div"); g.className = "kind-group";
-    g.innerHTML = `<div class="kind-label">${group.kind}</div>`;
-    for (const v of group.variants) {
-      const sel = document.createElement("select");
-      sel.className = "variant";
-      const def = document.createElement("option");
-      def.value = ""; def.textContent = `${group.name} — ${v.name} (${v.size_gb} GB)`;
-      sel.appendChild(def);
-      sel.onclick = () => { if (!sel.value) sel.value = v.path; };
-      // single-shot select: clicking an option of the group's hidden list is
-      // clunky, so render one <select> per variant holding just that variant
-      sel.value = v.path;
-      sel.dataset.kind = group.kind; sel.dataset.path = v.path;
-      sel.disabled = true; sel.style.display = "none";
-      const btn = document.createElement("button");
-      btn.className = "sec"; btn.style.cssText = "display:block;width:100%;margin-bottom:6px;text-align:left;font-weight:400";
-      btn.textContent = `${v.name}  ·  ${v.size_gb} GB`;
-      btn.onclick = () => pickVariant(group.kind, v.path, v.name, btn, g);
-      g.appendChild(btn); g.appendChild(sel);
-    }
-    box.appendChild(g);
-  }
-  if (!catalog.length)
-    box.innerHTML = '<p class="hint">no models found under the models dir</p>';
+let catalog = [], picked = null;
+
+function groupByKind() {
+  const kinds = [];
+  for (const g of catalog)
+    if (!kinds.includes(g.kind)) kinds.push(g.kind);
+  return kinds;
 }
 
-let picked = null;
-function pickVariant(kind, path, name, btn, group) {
-  picked = { kind, path, name };
-  group.querySelectorAll("button").forEach(b =>
-    b.style.borderColor = b === btn ? "var(--accent)" : "var(--line)");
-  $("seg-box").classList.toggle("show", kind === "image");
-  updateSlotInfo(`selected: ${kind}/${name}`);
+function fillSelect(sel, items, formatter) {
+  sel.innerHTML = "";
+  for (const it of items) {
+    const o = document.createElement("option");
+    o.value = it.__key; o.textContent = formatter(it);
+    sel.appendChild(o);
+  }
 }
+
+function populateModels() {
+  const kind = $("sel-kind").value;
+  const models = catalog.filter(g => g.kind === kind);
+  models.forEach(m => m.__key = m.name);
+  fillSelect($("sel-model"), models, m => m.name);
+  populateVariants();
+}
+
+function populateVariants() {
+  const kind = $("sel-kind").value, name = $("sel-model").value;
+  const group = catalog.find(g => g.kind === kind && g.name === name) || {variants: []};
+  group.variants.forEach(v => v.__key = v.path);
+  fillSelect($("sel-variant"), group.variants,
+             v => `${v.name}  ·  ${v.size_gb} GB`);
+  setPicked();
+}
+
+function setPicked() {
+  const kind = $("sel-kind").value, name = $("sel-model").value;
+  const path = $("sel-variant").value;
+  if (!path) { picked = null; updateSlotInfo("no variant available"); return; }
+  const vname = path.split(/[\\/]/).pop();
+  picked = { kind, path, name: `${name} / ${vname}` };
+  $("seg-box").classList.toggle("show", kind === "image");
+  updateSlotInfo(`selected: ${kind} · ${picked.name}`);
+}
+
+/* point the cascades at a known model path (e.g. the loaded one) */
+function syncCascades(path) {
+  if (!path || (picked && picked.path === path)) return;
+  const group = catalog.find(g => g.variants.some(v => v.path === path));
+  if (!group) return;
+  const v = group.variants.find(x => x.path === path);
+  $("sel-kind").value = group.kind;
+  populateModels();
+  $("sel-model").value = group.name;
+  populateVariants();
+  $("sel-variant").value = v.path;
+  setPicked();
+}
+
+async function refreshCatalog() {
+  catalog = await (await fetch("/api/models")).json();
+  const kinds = groupByKind();
+  fillSelect($("sel-kind"), kinds.map(k => ({__key: k})),
+             k => k.__key.toUpperCase());
+  const empty = !catalog.length;
+  $("catalog-empty").style.display = empty ? "block" : "none";
+  ["sel-kind", "sel-model", "sel-variant"].forEach(id =>
+    $(id).disabled = empty);
+  if (!empty) { populateModels(); setPicked(); }
+}
+
+$("sel-kind").onchange = populateModels;
+$("sel-model").onchange = populateVariants;
+$("sel-variant").onchange = setPicked;
 
 async function refreshDevices() {
   const devs = await (await fetch("/api/devices")).json();
@@ -287,6 +329,7 @@ function renderStatus(s) {
   tag.textContent = s.loaded || s.loading
     ? `${s.kind}:${s.name}${s.devices ? " [" + s.devices.join(",") + "]" : " on " + s.device}`
     : "no model";
+  if (s.loaded || s.loading) syncCascades(s.path);
   if (s.error && !s.loading) showSlotError(s.error);
   if (s.loaded) {
     showSlotError(null);

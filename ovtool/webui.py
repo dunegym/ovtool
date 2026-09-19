@@ -140,6 +140,7 @@ def _load_model(spec: dict) -> None:
         SLOT.reset()
         SLOT.loading = True
         SLOT.path, SLOT.kind = spec["path"], spec["kind"]
+        SLOT.device = spec["device"]
 
         # registry gate before spending minutes on a compile
         fake_args = argparse.Namespace(
