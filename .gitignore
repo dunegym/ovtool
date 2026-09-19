@@ -8,3 +8,4 @@ ovtool.egg-info/
 __pycache__/
 *.pyc
 *.log
+generated-webui/
