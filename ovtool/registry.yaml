@@ -249,6 +249,7 @@ models:
       int8:
         devices: [GPU, CPU, AUTO]
         convert: "ovtool convert image stabilityai/sd-turbo -o ./sd-turbo-int8 --weight-format int8"
+        note: NPU segmented execution verified (--devices NPU,NPU,GPU; 4-step 512px ~12s warm cache)
       int4-g64:
         devices: [GPU, CPU, AUTO]
         convert: "ovtool convert image stabilityai/sd-turbo -o ./sd-turbo-int4 --weight-format int4 --group-size 64"
@@ -259,8 +260,9 @@ global_rules:
   - when_device: NPU
     forbid_kind: image
     message: >-
-      diffusion models are not supported end-to-end on NPU by this tool
-      (NPU executes only text-encoder/UNet stages; VAE decode stays on GPU).
+      whole-pipeline diffusion on NPU is not supported (VAE decode is not
+      NPU-capable); use segmented execution instead:
+      ovtool image ... --devices NPU,NPU,GPU.
   - when_device: NPU
     forbid_kind: vlm
     message: >-

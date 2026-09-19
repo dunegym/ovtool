@@ -67,6 +67,12 @@ def check(kind: str, model_str: str, device: str, args: argparse.Namespace) -> l
 
     global_rules = load().get("global_rules", []) if entry else []
 
+    # segmented per-component execution (--devices TE,DENOISE,VAE): text
+    # encoder + denoiser may run on the NPU while VAE decode stays on GPU
+    seg = [d.strip().upper().split(":")[0].split(".")[0]
+           for d in (getattr(args, "devices", "") or "").split(",") if d.strip()]
+    segmented = kind == "image" and len(seg) == 3
+
     if entry is None:
         if kind in ("llm", "vlm", "image"):
             issues.append(Issue(OK, "model not in built-in registry; skipping compatibility checks"))
@@ -82,11 +88,14 @@ def check(kind: str, model_str: str, device: str, args: argparse.Namespace) -> l
             f"quantization variant '{quant}' is not in the registry for {entry['id']}; "
             f"known variants: {', '.join(variants)}"))
 
-    # 2) devices allowed for the detected variant (fall back to union)
+    # 2) devices allowed for the detected variant (fall back to union);
+    #    segmented mode places components individually, so the whole-model
+    #    device list does not apply
     allowed: set[str] = set()
     for v in variants.values():
         allowed.update(d.upper() for d in v.get("devices", []))
-    if allowed and dev not in allowed and dev not in ("AUTO", "HETERO", "MULTI", "BATCH"):
+    if allowed and dev not in allowed and dev not in ("AUTO", "HETERO", "MULTI", "BATCH") \
+            and not segmented:
         hints = []
         for name, v in variants.items():
             if dev in [d.upper() for d in v.get("devices", [])]:
@@ -101,11 +110,21 @@ def check(kind: str, model_str: str, device: str, args: argparse.Namespace) -> l
         if rule.get("when_device") != dev:
             continue
         if rule.get("forbid_kind") == kind:
+            if segmented:
+                issues.append(Issue(
+                    OK, "segmented image execution (--devices) is allowed on NPU: "
+                        "text encoder + denoiser on NPU, VAE decode stays on GPU/CPU"))
+                continue
             issues.append(Issue(ERROR, f"{kind} inference on NPU is disabled: {rule['message']}"))
         req = rule.get("require_quant")
         kinds = rule.get("for_kinds", [])
         if req and kind in kinds and quant != req:
             issues.append(Issue(ERROR, rule["message"]))
+
+    if segmented and seg[2] == "NPU":
+        issues.append(Issue(
+            WARN, "VAE decode on NPU is not supported by the runtime; keep the "
+                  "third --devices entry on GPU or CPU"))
 
     # 4) entry-specific rules
     if entry.get("text_only") and kind == "vlm" and getattr(args, "image", None):

@@ -47,6 +47,11 @@ def _common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--scheduler", default=None,
                    help="Override scheduler type, e.g. LCM, DPM_SOLIDER_MULTISTEP, EULER_ANCESTRAL")
     p.add_argument("--out-dir", default="./generated", help="Directory for generated PNGs")
+    p.add_argument("--devices", default=None, metavar="TE,DENOISE,VAE",
+                   help="Segmented execution: one device per pipeline component, e.g. "
+                        "--devices NPU,NPU,GPU (text encoder + denoiser on NPU, VAE decode "
+                        "on GPU). Fixes static shapes to --width/--height. VAE decode is "
+                        "not NPU-capable; keep the third entry on GPU/CPU.")
     p.add_argument("--opt", action="append", metavar="KEY=VALUE", help="Runtime option KEY=VALUE (repeatable)")
 
 
@@ -61,10 +66,36 @@ def _open_pipeline(ovgenai, args, image_mode: bool):
         opts[k] = int(v) if v.isdigit() else v
 
     cls = ovgenai.Image2ImagePipeline if image_mode else ovgenai.Text2ImagePipeline
-    kwargs = dict(device=device)
-    if opts:
-        kwargs["config"] = opts
-    pipe = cls(args.model, **kwargs)
+
+    if getattr(args, "devices", None):
+        # Segmented execution: each pipeline component gets its own device.
+        # Static shapes are mandatory here (NPU has no dynamic-shape
+        # support), so the pipeline is reshaped to the requested geometry
+        # before compiling.
+        devices = [d.strip() for d in args.devices.split(",") if d.strip()]
+        if len(devices) != 3:
+            raise SystemExit("--devices expects three entries: TEXT_ENCODER,DENOISER,VAE "
+                             "(e.g. NPU,NPU,GPU)")
+        devices = [resolve_device(d).upper() for d in devices]
+        if "NPU" in devices:
+            # NPU compilation is slow; cache compiled graphs next to the model
+            opts.setdefault("CACHE_DIR", str(Path(args.model) / "cache"))
+        print(f"[ovtool] segmented pipeline: text_encoder={devices[0]} "
+              f"denoiser={devices[1]} vae={devices[2]} "
+              f"@ {args.num_images}x{args.width}x{args.height}")
+        pipe = cls(args.model)
+        if not hasattr(pipe, "reshape") or not hasattr(pipe, "compile"):
+            raise SystemExit("this openvino-genai release does not support "
+                             "per-component compile(); update openvino-genai")
+        pipe.reshape(int(args.num_images), int(args.height), int(args.width),
+                     float(args.guidance_scale))
+        pipe.compile(devices[0], devices[1], devices[2],
+                     **({"config": opts} if opts else {}))
+    else:
+        kwargs = dict(device=device)
+        if opts:
+            kwargs["config"] = opts
+        pipe = cls(args.model, **kwargs)
     if args.scheduler:
         sched = getattr(ovgenai.SchedulerType, args.scheduler.upper(), None)
         if sched is None:

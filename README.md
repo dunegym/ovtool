@@ -145,8 +145,21 @@ ovtool image -m ./sd-turbo-ir -d GPU "a corgi surfing a wave" \
 Options: `--width/--height`, `--steps` (denoising steps), `--guidance-scale`, `--num-images`,
 `--negative-prompt`, `--seed`, `--scheduler` (e.g. `LCM`, `EULER_ANCESTRAL`, depending on the model), `--out-dir`.
 
+**Segmented multi-device execution** (`--devices TEXT,DENOISE,VAE`): each pipeline component
+gets its own device, which is how diffusion runs on the NPU (VAE decode is not NPU-capable
+and stays on GPU/CPU). Shapes are fixed statically to `--width/--height/--num-images`:
+
+```bash
+ovtool image -m ./sd-turbo-int8 -d GPU --devices NPU,NPU,GPU \
+    "a corgi surfing a wave" --steps 4 --guidance-scale 1.0 --seed 42
+```
+
+Verified with sd-turbo int8 (512px, 4 steps): first run compiles the NPU graphs (~2 min,
+cached under `<model>/cache`), subsequent runs ~12s — on par with an all-GPU run (~14s) at
+near-identical output for the same seed. The registry blocks whole-pipeline `-d NPU` for
+image models but allows the segmented form; putting the VAE on NPU triggers a warning.
+
 > Note: diffusion models are officially recommended to run on **GPU** (which is also the default device).
-> On NPU, diffusion runs in a segmented fashion (text encoder + UNet on NPU, VAE decoder on GPU); this tool does not orchestrate that mode automatically yet.
 
 ## Device Selection Guide
 
@@ -154,7 +167,7 @@ Options: `--width/--height`, `--steps` (denoising steps), `--guidance-scale`, `-
 |---|---|---|
 | CPU | General use, accelerated by AVX2/AVX-512/AMX | LLMs work with INT4/INT8 |
 | GPU (iGPU / Arc / DC GPU) | Best for diffusion; good LLM throughput | Requires Intel graphics drivers |
-| NPU (Core Ultra) | Low-power LLM inference | **Symmetric INT4 required (`convert ... --sym`)**; static-shape execution — set the compile-time budget via `--max-prompt-len` (default 1024) / `--min-response-len` (default 128); measured ~21 tok/s on Qwen3-0.6B with the local NPU 3720 |
+| NPU (Core Ultra) | Low-power LLM inference; diffusion in segmented mode (`image --devices NPU,NPU,GPU`) | **Symmetric INT4 required for LLMs** (`convert ... --sym`); static-shape execution — LLM budget via `--max-prompt-len` (default 1024) / `--min-response-len` (default 128), measured ~21 tok/s on Qwen3-0.6B with the local NPU 3720 |
 | AUTO / HETERO | Automatic selection / mixed execution | Useful when device capabilities are uncertain |
 
 ## Code Structure
