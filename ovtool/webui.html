@@ -279,14 +279,19 @@ $("sel-variant").onchange = setPicked;
 async function refreshDevices() {
   const devs = await (await fetch("/api/devices")).json();
   const sel = $("device");
+  const prev = sel.value;
+  sel.innerHTML = "";
   const known = ["CPU", "GPU", "NPU", "AUTO"];
   const names = devs.map(d => d.device);
-  for (const d of [...known.filter(k => names.includes(k) || k === "AUTO"),
-                   ...names.filter(n => !known.includes(n))]) {
+  const ordered = [...known.filter(k => names.includes(k) || k === "AUTO"),
+                   ...names.filter(n => !known.includes(n))];
+  for (const d of ordered) {
     const o = document.createElement("option"); o.value = d;
-    o.textContent = d; if (d === "GPU") o.selected = true;
+    o.textContent = d;
     sel.appendChild(o);
   }
+  sel.value = ordered.includes(prev) ? prev
+            : (ordered.includes("GPU") ? "GPU" : ordered[0]);
   const tb = $("dev-table").querySelector("tbody"); tb.innerHTML = "";
   for (const d of devs) {
     const tr = document.createElement("tr");
