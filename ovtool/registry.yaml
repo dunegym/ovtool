@@ -255,6 +255,48 @@ models:
         convert: "ovtool convert image stabilityai/sd-turbo -o ./sd-turbo-int4 --weight-format int4 --group-size 64"
         note: group 64 required — UNet channel size 320 is not divisible by 128
 
+  - id: SimianLuo/LCM_Dreamshaper_v7
+    kind: image
+    match: ["lcm-dreamshaper"]
+    recommended_device: GPU
+    variants:
+      int8:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image SimianLuo/LCM_Dreamshaper_v7 -o ./lcm-dreamshaper-int8 --weight-format int8"
+        note: LCM-distilled, 8 steps suffice — 512px ~19s on iGPU
+      int4-g64:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image SimianLuo/LCM_Dreamshaper_v7 -o ./lcm-dreamshaper-int4 --weight-format int4 --group-size 64"
+        note: group 64 required — UNet channel size 320 is not divisible by 128
+
+  - id: stable-diffusion-v1-5/stable-diffusion-v1-5
+    kind: image
+    match: ["sd-1.5", "stable-diffusion-v1-5"]
+    recommended_device: GPU
+    variants:
+      int8:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image stable-diffusion-v1-5/stable-diffusion-v1-5 -o ./sd15-int8 --weight-format int8"
+        note: classic SD1.5 base — 20-step 512px ~47s on iGPU
+      int4-g64:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image stable-diffusion-v1-5/stable-diffusion-v1-5 -o ./sd15-int4 --weight-format int4 --group-size 64"
+        note: group 64 required — UNet channel size 320 is not divisible by 128
+
+  - id: segmind/SSD-1B
+    kind: image
+    match: ["ssd-1b"]
+    recommended_device: GPU
+    variants:
+      int8:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image segmind/SSD-1B -o ./ssd1b-int8 --weight-format int8"
+        note: SDXL-distilled, native 1024px — 25-step ~89s on iGPU; needs the dual-tokenizer export
+      int4-g64:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image segmind/SSD-1B -o ./ssd1b-int4 --weight-format int4 --group-size 64"
+        note: group 64 required — UNet channel size 320 is not divisible by 128
+
 # global rules, evaluated for every matched entry
 global_rules:
   - when_device: NPU

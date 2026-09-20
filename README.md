@@ -216,6 +216,7 @@ ovtool/
 - `generate` one-shot generation (CPU / GPU, streaming & non-streaming, `--stats`, `--opt perf_mode=...`): ✅ (~50 tok/s @0.5B-int4 on iGPU)
 - `chat` multi-turn interaction (incl. `/exit` `/reset` `/system`): ✅
 - Diffusion conversion + INT8 quantization (sd-turbo): ✅
+- Text-to-image model expansion (LCM-Dreamshaper-v7 / SD-1.5 / SSD-1B, int8 + int4-g64 each): ✅ generation verified on iGPU (LCM 8-step 512px ~19s; SSD-1B 25-step 1024px ~89s); includes the SDXL dual-tokenizer export fix (`tokenizer_2` IR)
 - `image` text-to-image / `image2image` (GPU, seed reproducibility): ✅ (512×512×4 steps in seconds)
 - **NPU inference (Qwen3-0.6B symmetric INT4)**: ✅ TTFT ~1.5s, ~21 tok/s; `--max-prompt-len` / `--min-response-len` static-shape options verified
 - **Qwen3.5-0.8B / Qwen3.5-2B** (new native multimodal `qwen3_5` architecture, sym/asym INT4): ✅ text generation OK on GPU (2B ~33 tok/s; 0.8B NPU compile extremely slow)

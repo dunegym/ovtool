@@ -30,13 +30,27 @@ def _hint(module: str) -> SystemExit:
 
 
 def _pick_image_cls(model_id: str):
-    """Select the right optimum-intel diffusion class from the model config."""
-    from transformers import AutoConfig
+    """Select the right optimum-intel diffusion class from the model config.
+
+    Diffusion repos are diffusers pipelines: their class lives in
+    model_index.json (_class_name), not in a transformers AutoConfig.
+    """
+    name = ""
     try:
-        cfg = AutoConfig.from_pretrained(model_id)
+        import json
+        from huggingface_hub import hf_hub_download
+        index_path = hf_hub_download(model_id, "model_index.json")
+        with open(index_path, encoding="utf-8") as f:
+            name = json.load(f).get("_class_name", "")
     except Exception:
-        cfg = None
-    name = getattr(cfg, "_class_name", "") or ""
+        pass
+    if not name:
+        try:
+            from transformers import AutoConfig
+            cfg = AutoConfig.from_pretrained(model_id)
+            name = getattr(cfg, "_class_name", "") or ""
+        except Exception:
+            pass
     try:
         from optimum.intel import (
             OVFlux2KleinPipeline,
@@ -109,13 +123,16 @@ def _build_quant_cfg(args: argparse.Namespace):
     return OVWeightQuantizationConfig(**kwargs)
 
 
-def _save_tokenizer(args: argparse.Namespace, out: Path, subdir: str | None = None) -> None:
+def _save_tokenizer(args: argparse.Namespace, out: Path, subdir: str | None = None,
+                    src_subfolder: str | None = None) -> None:
     """Convert & save the HF tokenizer into OpenVINO tokenizer IR + copy configs.
 
     openvino_genai pipelines (LLM/VLM and diffusion alike) require
     openvino_tokenizer.xml for prompt encoding. Diffusion pipelines expect it
     inside the `tokenizer/` component subfolder (GenAI derives the path from
-    text_encoder -> tokenizer); LLM/VLM expect it at the model root.
+    text_encoder -> tokenizer); LLM/VLM expect it at the model root. SDXL-class
+    pipelines carry a second encoder whose tokenizer GenAI resolves as
+    text_encoder_2 -> tokenizer_2, so pass src_subfolder="tokenizer_2".
     """
     target = out / subdir if subdir else out
     try:
@@ -132,7 +149,13 @@ def _save_tokenizer(args: argparse.Namespace, out: Path, subdir: str | None = No
     candidates = [args.model, out / "tokenizer", target, out]
     for src in candidates:
         try:
-            cand = AutoTokenizer.from_pretrained(str(src), trust_remote_code=args.trust_remote_code)
+            if src_subfolder and src == args.model:
+                cand = AutoTokenizer.from_pretrained(
+                    str(src), subfolder=src_subfolder,
+                    trust_remote_code=args.trust_remote_code)
+            else:
+                cand = AutoTokenizer.from_pretrained(
+                    str(src), trust_remote_code=args.trust_remote_code)
             probe = cand.encode("hello")
             if not probe:
                 raise ValueError(f"tokenizer from {src} encodes to empty ids (broken)")
@@ -243,6 +266,9 @@ def run_convert(args: argparse.Namespace) -> None:
     # optimum-intel saves the model + configs; we add the converted tokenizer
     model.save_pretrained(out)
     _save_tokenizer(args, out, subdir="tokenizer" if args.kind == "image" else None)
+    if args.kind == "image" and (out / "tokenizer_2").is_dir():
+        # SDXL-class second encoder: GenAI resolves text_encoder_2 -> tokenizer_2
+        _save_tokenizer(args, out, subdir="tokenizer_2", src_subfolder="tokenizer_2")
     if args.kind == "vlm":
         _save_processor(args, out)
     print(f"\nDone. OpenVINO IR written to: {out.resolve()}")
