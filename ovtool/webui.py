@@ -35,13 +35,16 @@ import openvino_genai as ovgenai
 import openvino_tokenizers  # noqa: F401  (registers custom-op extension)
 
 from .devices import list_devices
-from .registry import (check as registry_check, find_local_models,
-                       model_roots)
+from .registry import check as registry_check, extra_model_roots, find_local_models
 from .server import DEFAULT_MAX_TOKENS, _finish_reason, _usage, build_config, render_chat
 
 WEBUI_HTML = Path(__file__).parent / "webui.html"
 KIND_DIRS = ("llm", "vlm", "image")
 GENERATION_LOCK_TIMEOUT = 1800  # refuse queued generation after 30 min
+
+# extra model roots added at runtime through the UI (session-scoped);
+# $OVTOOL_MODELS_PATH roots always apply on top of these
+SESSION_ROOTS: list[str] = []
 
 
 class ModelSlot:
@@ -81,12 +84,21 @@ SLOT = ModelSlot()
 # helpers
 # --------------------------------------------------------------------------- #
 
+def all_roots(models_dir: str) -> list[str]:
+    """Default dir + $OVTOOL_MODELS_PATH roots + session roots (deduped)."""
+    roots = [models_dir]
+    for r in SESSION_ROOTS + extra_model_roots():
+        if r not in roots:
+            roots.append(r)
+    return roots
+
+
 def scan_models(models_dir: str) -> list[dict]:
     """Inventory model directories under models_dir plus every extra root
-    from $OVTOOL_MODELS_PATH (recursive discovery, shared with the CLI)."""
+    (session UI roots, $OVTOOL_MODELS_PATH), using recursive discovery."""
     seen: set[str] = set()
     groups: list[dict] = []
-    for root in model_roots(models_dir):
+    for root in all_roots(models_dir):
         for g in find_local_models([root]):
             variants = [v for v in g["variants"] if v["path"] not in seen]
             seen.update(v["path"] for v in variants)
@@ -259,6 +271,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, scan_models(self.models_dir))
             elif path == "/api/status":
                 self._json(200, SLOT.describe())
+            elif path == "/api/roots":
+                self._json(200, {"default": self.models_dir,
+                                 "env": extra_model_roots(),
+                                 "session": list(SESSION_ROOTS)})
             else:
                 raise _ApiError(404, f"unknown path: {path}")
         except _ApiError as e:
@@ -278,12 +294,55 @@ class Handler(BaseHTTPRequestHandler):
                 self._chat(body)
             elif path == "/api/image":
                 self._image(body)
+            elif path == "/api/roots":
+                self._add_root(body)
             else:
                 raise _ApiError(404, f"unknown path: {path}")
         except _ApiError as e:
             self._json(e.status, {"error": e.message})
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
             self.close_connection = True
+
+    def do_DELETE(self):
+        try:
+            if self.path.split("?")[0] == "/api/roots":
+                self._remove_root(self._read_json())
+            else:
+                raise _ApiError(404, f"unknown path: {self.path}")
+        except _ApiError as e:
+            self._json(e.status, {"error": e.message})
+
+    # ---------------- model roots ---------------- #
+
+    def _add_root(self, body: dict) -> None:
+        path = (body.get("path") or "").strip().strip('"')
+        if not path:
+            raise _ApiError(400, "path required")
+        root = Path(path)
+        if not root.is_dir():
+            raise _ApiError(400, f"not a directory: {path}")
+        roots = all_roots(self.models_dir)
+        if str(root) in roots or path in roots:
+            raise _ApiError(400, "root already active")
+        found = find_local_models([path])
+        if not found:
+            raise _ApiError(400, f"no OpenVINO models found under {path} "
+                                 "(any depth)")
+        if path not in SESSION_ROOTS:
+            SESSION_ROOTS.append(path)
+        count = sum(len(g["variants"]) for g in found)
+        self._json(200, {"added": path, "models": len(found),
+                         "variants": count})
+
+    def _remove_root(self, body: dict) -> None:
+        path = (body.get("path") or "").strip().strip('"')
+        if path in extra_model_roots():
+            raise _ApiError(400, "this root comes from $OVTOOL_MODELS_PATH; "
+                                 "unset the environment variable instead")
+        if path not in SESSION_ROOTS:
+            raise _ApiError(404, "unknown session root")
+        SESSION_ROOTS.remove(path)
+        self._json(200, {"removed": path})
 
     # ---------------- endpoints ---------------- #
 

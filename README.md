@@ -58,8 +58,9 @@ Local discovery scans `./models` plus **every root listed in the
 containing exported OpenVINO artifacts (`openvino_model.xml` /
 `openvino_language_model.xml` / `model_index.json`) is auto-classified as
 llm / vlm / image. The web UI catalog (`ovtool webui`) picks up the same
-roots, so models from extra folders appear in its category → model →
-quantization cascade.
+roots and additionally offers an **add-path box** in the sidebar: type any
+directory, click `+`, and its models (found recursively) join the
+category → model → quantization cascade for the session.
 
 ### `ovtool devices`
 

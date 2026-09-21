@@ -33,6 +33,13 @@
     padding: 7px 9px; font-size: 13px; margin-bottom: 8px; }
   select:focus, input:focus { outline: 1px solid var(--accent); }
   .row { display: flex; gap: 8px; } .row > * { flex: 1; }
+  .root-row { display: flex; justify-content: space-between; align-items: center;
+              font-family: var(--mono); font-size: 11px; color: var(--dim);
+              border: 1px dashed var(--line); border-radius: 6px;
+              padding: 4px 8px; margin-bottom: 4px; word-break: break-all; }
+  .root-row span { overflow: hidden; text-overflow: ellipsis; }
+  .root-x { background: none; color: var(--err); border: 0; cursor: pointer;
+            font-size: 14px; padding: 0 2px; margin-left: 6px; flex-shrink: 0; }
   .kind-label { font-size: 11px; color: var(--dim); margin: 6px 0 3px;
                 font-family: var(--mono); }
   button { background: var(--accent); color: #08121e; border: 0; border-radius: 6px;
@@ -116,6 +123,14 @@
     <select id="sel-model"></select>
     <div class="kind-label">quantization</div>
     <select id="sel-variant"></select>
+    <div class="kind-label">extra model paths</div>
+    <div class="row">
+      <input type="text" id="root-input" placeholder="D:\ovmodels" style="margin-bottom:6px">
+      <button id="btn-add-root" class="sec" style="flex:0 0 auto;margin-bottom:6px;padding:7px 12px">+</button>
+    </div>
+    <div id="roots-list"></div>
+    <p class="hint" style="margin-top:2px">recursive scan · session-scoped;
+      $OVTOOL_MODELS_PATH roots apply automatically</p>
     <div id="catalog-empty" style="display:none" class="hint">
       no models found under the models dir</div>
     <h2>Device</h2>
@@ -475,8 +490,51 @@ $("btn-gen").onclick = async () => {
   } finally { generating = false; $("btn-gen").disabled = false; }
 };
 
+/* ---------------- extra model roots ---------------- */
+async function refreshRoots() {
+  const r = await (await fetch("/api/roots")).json();
+  const box = $("roots-list"); box.innerHTML = "";
+  const rows = [...(r.env || []).map(p => ({p, fixed: true})),
+                ...(r.session || []).map(p => ({p, fixed: false}))];
+  for (const {p, fixed} of rows) {
+    const div = document.createElement("div"); div.className = "root-row";
+    const span = document.createElement("span"); span.textContent = p;
+    span.title = p; div.appendChild(span);
+    if (!fixed) {
+      const x = document.createElement("button"); x.className = "root-x";
+      x.textContent = "×"; x.title = "remove";
+      x.onclick = async () => {
+        const resp = await fetch("/api/roots", { method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: p }) });
+        const j = await resp.json();
+        if (j.error) return alert(j.error);
+        refreshRoots(); refreshCatalog();
+      };
+      div.appendChild(x);
+    } else {
+      span.title = p + " (from $OVTOOL_MODELS_PATH)";
+    }
+    box.appendChild(div);
+  }
+}
+
+async function addRoot() {
+  const path = $("root-input").value.trim();
+  if (!path) return;
+  const resp = await fetch("/api/roots", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }) });
+  const j = await resp.json();
+  if (j.error) return alert(j.error);
+  $("root-input").value = "";
+  refreshRoots(); refreshCatalog();
+}
+$("btn-add-root").onclick = addRoot;
+$("root-input").onkeydown = (e) => { if (e.key === "Enter") addRoot(); };
+
 /* ---------------- boot ---------------- */
-refreshCatalog(); refreshDevices();
+refreshCatalog(); refreshDevices(); refreshRoots();
 fetch("/api/status").then(r => r.json()).then(renderStatus);
 startPolling();
 </script>
