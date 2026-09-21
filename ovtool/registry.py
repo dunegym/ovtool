@@ -3,16 +3,23 @@
 Loads ovtool/registry.yaml and validates (model x device x parameters)
 combinations before a pipeline is loaded, so unusable configurations fail
 fast with actionable guidance instead of crashing inside the runtime.
+
+Also hosts local-model discovery: recursive scanning of the default models
+directory plus any extra roots listed in $OVTOOL_MODELS_PATH (os.pathsep
+separated), shared by the `ovtool models local` command and the web UI.
 """
 from __future__ import annotations
 
 import argparse
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 REGISTRY_PATH = Path(__file__).parent / "registry.yaml"
+MODELS_PATH_ENV = "OVTOOL_MODELS_PATH"
+DEFAULT_MODELS_DIR = "./models"
 
 OK, WARN, ERROR = "ok", "warn", "error"
 
@@ -189,3 +196,168 @@ def print_models(query: str | None = None) -> None:
         if tags:
             print(f"  notes   : {'; '.join(tags)}")
         print()
+
+
+# --------------------------------------------------------------------------- #
+# local model discovery
+# --------------------------------------------------------------------------- #
+
+def extra_model_roots() -> list[str]:
+    """Extra model roots from $OVTOOL_MODELS_PATH (os.pathsep separated)."""
+    raw = os.environ.get(MODELS_PATH_ENV, "")
+    return [p.strip().strip('"') for p in raw.split(os.pathsep) if p.strip().strip('"')]
+
+
+def model_roots(default_dir: str = DEFAULT_MODELS_DIR) -> list[str]:
+    return [default_dir] + [r for r in extra_model_roots() if r != default_dir]
+
+
+def detect_kind(model_dir: Path) -> str | None:
+    """Classify a directory as llm/vlm/image from its exported artifacts."""
+    try:
+        names = {p.name for p in model_dir.iterdir() if p.is_file()}
+    except OSError:
+        return None
+    if "model_index.json" in names:
+        return "image"  # diffusers pipeline (component IRs in subfolders)
+    if "openvino_vision_embeddings_model.xml" in names or \
+            "openvino_text_embeddings_model.xml" in names:
+        return "vlm"
+    if "openvino_language_model.xml" in names or "openvino_model.xml" in names:
+        return "llm"
+    return None
+
+
+_SKIP_DIRS = {"cache", "__pycache__", ".git", ".mimosa"}
+
+
+def _dir_size_gb(d: Path) -> float:
+    total = 0
+    try:
+        for f in d.rglob("*"):
+            if not f.is_file():
+                continue
+            if any(part in _SKIP_DIRS for part in f.relative_to(d).parts):
+                continue  # e.g. NPU compile caches inside the model dir
+            total += f.stat().st_size
+    except OSError:
+        pass
+    return round(total / 1e9, 2)
+
+
+def scan_root(root: Path) -> list[dict]:
+    """Recursively find model directories under root (does not descend into
+    a detected model: its component subfolders also contain IR files)."""
+    found: list[dict] = []
+
+    def walk(d: Path) -> None:
+        kind = detect_kind(d)
+        if kind:
+            try:
+                rel = d.relative_to(root)
+            except ValueError:
+                rel = d.name
+            parts = rel.parts
+            found.append({
+                "kind": kind,
+                "model": parts[-2] if len(parts) >= 2 else root.name,
+                "variant": parts[-1] if parts else root.name,
+                "path": str(d),
+            })
+            return
+        try:
+            subs = sorted(d.iterdir())
+        except OSError:
+            return
+        for sub in subs:
+            if sub.is_dir() and sub.name not in _SKIP_DIRS:
+                walk(sub)
+
+    walk(root)
+    return found
+
+
+def find_local_models(roots: list[str] | None = None,
+                      with_size: bool = True) -> list[dict]:
+    """Group locally found models as [{kind, name, root, variants:[...]}].
+
+    Grouping mirrors the <root>/<kind>/<model>/<variant> convention but
+    works for any nesting: a detected model directory contributes one
+    variant, its parent directory name is the model name.
+    """
+    roots = model_roots() if roots is None else roots
+    groups: dict[tuple, dict] = {}
+    order: list[tuple] = []
+    for root in roots:
+        rootp = Path(root)
+        if not rootp.is_dir():
+            continue
+        for m in scan_root(rootp):
+            key = (m["kind"], m["model"], root)
+            if key not in groups:
+                groups[key] = {"kind": m["kind"], "name": m["model"],
+                               "root": root, "variants": []}
+                order.append(key)
+            entry = {"name": m["variant"], "path": m["path"]}
+            if with_size:
+                entry["size_gb"] = _dir_size_gb(Path(m["path"]))
+            groups[key]["variants"].append(entry)
+    return [groups[k] for k in order]
+
+
+def _local_quants_by_entry() -> dict[str, set[str]]:
+    """registry entry id -> set of locally available quant variants."""
+    mapping: dict[str, set[str]] = {}
+    for group in find_local_models(with_size=False):
+        for v in group["variants"]:
+            entry = find_entry(v["path"])
+            if entry is not None:
+                mapping.setdefault(entry["id"], set()).add(detect_quant(v["path"]))
+    return mapping
+
+
+def print_models_remote(query: str | None = None) -> None:
+    local = _local_quants_by_entry()
+    for entry in load().get("models", []):
+        if query and query.lower() not in entry["id"].lower():
+            continue
+        variants = entry.get("variants", {})
+        devices = sorted({d.upper() for v in variants.values() for d in v.get("devices", [])})
+        have = local.get(entry["id"], set())
+        mark = f"  [local: {len(have)}/{len(variants)} variants]" if variants and have \
+            else "  [not local]"
+        print(f"{entry['id']}  [{entry['kind']}]  ({', '.join(devices)}){mark}")
+        line = ", ".join(f"{name}{' *' if name in have else ''}"
+                         for name in variants)
+        if line:
+            print(f"  variants: {line}   ( * = available locally)")
+        tags = []
+        if entry.get("text_only"):
+            tags.append("text-only on this GenAI release")
+        if entry.get("recommended_device"):
+            tags.append(f"recommended: {entry['recommended_device']}")
+        if tags:
+            print(f"  notes   : {'; '.join(tags)}")
+        print()
+
+
+def print_models_local(query: str | None = None) -> None:
+    groups = find_local_models()
+    roots = sorted({g["root"] for g in groups})
+    for r in extra_model_roots():
+        if r not in roots:
+            print(f"(extra root not found: {r})")
+    count = 0
+    for g in groups:
+        for v in g["variants"]:
+            text = f"{g['name']}/{v['name']}"
+            if query and query.lower() not in text.lower() \
+                    and query.lower() not in v["path"].lower():
+                continue
+            size = f"  {v.get('size_gb', 0):.2f} GB" if "size_gb" in v else ""
+            root_tag = "" if g["root"] == DEFAULT_MODELS_DIR else f"  [{g['root']}]"
+            print(f"[{g['kind']}] {text}{size}{root_tag}")
+            print(f"        {v['path']}")
+            count += 1
+    print(f"{count} local model(s)"
+          + (f" across {len(roots)} root(s)" if len(roots) > 1 else ""))

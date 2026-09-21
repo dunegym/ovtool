@@ -35,7 +35,8 @@ import openvino_genai as ovgenai
 import openvino_tokenizers  # noqa: F401  (registers custom-op extension)
 
 from .devices import list_devices
-from .registry import check as registry_check, report as registry_report
+from .registry import (check as registry_check, find_local_models,
+                       model_roots)
 from .server import DEFAULT_MAX_TOKENS, _finish_reason, _usage, build_config, render_chat
 
 WEBUI_HTML = Path(__file__).parent / "webui.html"
@@ -81,32 +82,23 @@ SLOT = ModelSlot()
 # --------------------------------------------------------------------------- #
 
 def scan_models(models_dir: str) -> list[dict]:
-    """Inventory <models_dir>/<kind>/<model>/<variant>/ directories."""
-    root = Path(models_dir)
-    found: list[dict] = []
-    if not root.is_dir():
-        return found
-    for kind in KIND_DIRS:
-        kdir = root / kind
-        if not kdir.is_dir():
-            continue
-        for mdir in sorted(kdir.iterdir()):
-            if not mdir.is_dir():
+    """Inventory model directories under models_dir plus every extra root
+    from $OVTOOL_MODELS_PATH (recursive discovery, shared with the CLI)."""
+    seen: set[str] = set()
+    groups: list[dict] = []
+    for root in model_roots(models_dir):
+        for g in find_local_models([root]):
+            variants = [v for v in g["variants"] if v["path"] not in seen]
+            seen.update(v["path"] for v in variants)
+            if not variants:
                 continue
-            variants = []
-            for vdir in sorted(mdir.iterdir()):
-                if vdir.is_dir() and (any(vdir.rglob("openvino_*.xml"))
-                                      or (vdir / "model_index.json").exists()):
-                    try:
-                        size_gb = sum(f.stat().st_size for f in vdir.rglob("*")
-                                      if f.is_file()) / 1e9
-                    except OSError:
-                        size_gb = 0
-                    variants.append({"name": vdir.name, "path": str(vdir),
-                                     "size_gb": round(size_gb, 2)})
-            if variants:
-                found.append({"kind": kind, "name": mdir.name, "variants": variants})
-    return found
+            name = g["name"]
+            if any(other["kind"] == g["kind"] and other["name"] == name
+                   for other in groups):
+                name = f"{name} ({Path(root).name})"
+            groups.append({"kind": g["kind"], "name": name,
+                           "source": root, "variants": variants})
+    return groups
 
 
 def _b64_png(tensor_or_result) -> list[str]:

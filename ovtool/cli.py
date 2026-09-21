@@ -22,10 +22,31 @@ def main(argv: list[str] | None = None) -> None:
 
     # devices
     from .devices import print_devices
-    from .registry import print_models
-    p = sub.add_parser("models", help="List registry-known HF models with verified device/parameter combos")
-    p.add_argument("query", nargs="?", default=None, help="Optional case-insensitive filter")
-    p.set_defaults(func=lambda args: print_models(args.query))
+    from . import registry
+    p = sub.add_parser("models", help="List registry / locally available models",
+                       description="ovtool models [remote|local] [query]\n"
+                                   "  remote (default): built-in registry, marking "
+                                   "variants available locally\n"
+                                   "  local          : models found on disk, with "
+                                   "their paths\n"
+                                   "Local discovery scans ./models plus every root in "
+                                   "$OVTOOL_MODELS_PATH (recursively).")
+    p.add_argument("which", nargs="?", default=None,
+                   help="remote (default) | local")
+    p.add_argument("query", nargs="?", default=None,
+                   help="Optional case-insensitive filter")
+
+    def _run_models(args):
+        which = args.which
+        if which not in (None, "remote", "local"):
+            # backward compat: treat a bare word as the query
+            args.query = which or args.query
+            which = "remote"
+        if which == "local":
+            registry.print_models_local(args.query)
+        else:
+            registry.print_models_remote(args.query)
+    p.set_defaults(func=_run_models)
 
     p = sub.add_parser("devices", help="List available inference devices")
     p.set_defaults(func=lambda args: print_devices())

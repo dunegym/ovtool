@@ -39,17 +39,27 @@ ovtool chat -m ./qwen3-06b-int4 -d GPU --opt perf_mode=LOW_LATENCY
 
 ## Subcommand Reference
 
-### `ovtool models`
+### `ovtool models [remote|local] [query]`
 
-Lists the built-in compatibility registry: HF models with their verified
-(device × quantization × parameter) combinations and the matching `convert`
-commands. All inference subcommands consult this registry before loading a
-model and refuse known-bad configurations, e.g.:
+**`remote`** (default) lists the built-in compatibility registry — HF models with
+their verified (device × quantization × parameter) combinations — marking which
+variants are available locally (`*`), without the convert command examples:
 
 - asymmetric INT4 LLMs on NPU (symmetric INT4 required)
 - diffusion or VLM pipelines on NPU (unsupported/hang in testing)
 - image inputs for Qwen3-VL / Qwen3.5 on the current openvino-genai release
 - `--max-new-tokens` exceeding the NPU static response budget (warning)
+
+**`local`** lists every model found on disk with its path and size.
+
+Local discovery scans `./models` plus **every root listed in the
+`OVTOOL_MODELS_PATH` environment variable** (path-separator separated, e.g.
+`OVTOOL_MODELS_PATH=D:\ovmodels;E:\more`), recursively: any directory
+containing exported OpenVINO artifacts (`openvino_model.xml` /
+`openvino_language_model.xml` / `model_index.json`) is auto-classified as
+llm / vlm / image. The web UI catalog (`ovtool webui`) picks up the same
+roots, so models from extra folders appear in its category → model →
+quantization cascade.
 
 ### `ovtool devices`
 
