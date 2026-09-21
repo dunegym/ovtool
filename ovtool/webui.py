@@ -48,7 +48,7 @@ GENERATION_LOCK_TIMEOUT = 1800  # refuse queued generation after 30 min
 SESSION_ROOTS: list[str] = []
 
 SETTINGS_PATH = Path.home() / ".ovtool" / "webui_settings.json"
-DEFAULT_SETTINGS = {"theme": "dark", "lang": "en", "persist_roots": False}
+DEFAULT_SETTINGS = {"theme": "dark", "lang": "en", "persist": False}
 
 
 def load_settings() -> dict:
@@ -225,12 +225,22 @@ class Handler(BaseHTTPRequestHandler):
     models_dir: str = "./models"
     settings: dict = dict(DEFAULT_SETTINGS)
 
-    def _sync_persisted_roots(self) -> None:
-        if self.settings.get("persist_roots"):
-            self.settings["roots"] = list(SESSION_ROOTS)
-        else:
-            self.settings.pop("roots", None)
-        save_settings(self.settings)
+    def _persist_now(self) -> None:
+        """Write the settings file when persistence is on; drop it otherwise.
+
+        The file carries the whole settings panel: theme, language, extra
+        model roots and the saved UI state (selections, generation params).
+        """
+        if not self.settings.get("persist"):
+            try:
+                SETTINGS_PATH.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return
+        data = {k: v for k, v in self.settings.items() if k != "persist_roots"}
+        data["persist"] = True
+        data["roots"] = list(SESSION_ROOTS)
+        save_settings(data)
 
     # ---------------- plumbing ---------------- #
 
@@ -307,7 +317,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "session": list(SESSION_ROOTS)})
             elif path == "/api/settings":
                 self._json(200, {k: v for k, v in self.settings.items()
-                                 if k != "roots"})
+                                 if k not in ("roots", "persist_roots")})
             else:
                 raise _ApiError(404, f"unknown path: {path}")
         except _ApiError as e:
@@ -354,13 +364,18 @@ class Handler(BaseHTTPRequestHandler):
             raise _ApiError(400, "theme must be dark | light")
         if "lang" in body and body["lang"] not in ("en", "zh"):
             raise _ApiError(400, "lang must be en | zh")
-        if "persist_roots" in body and not isinstance(body["persist_roots"], bool):
-            raise _ApiError(400, "persist_roots must be a boolean")
-        for key in ("theme", "lang", "persist_roots"):
+        if "persist" in body and not isinstance(body["persist"], bool):
+            raise _ApiError(400, "persist must be a boolean")
+        if "ui" in body:
+            if not isinstance(body["ui"], dict) or len(json.dumps(body["ui"])) > 8192:
+                raise _ApiError(400, "ui must be a small JSON object")
+            self.settings.setdefault("ui", {}).update(body["ui"])
+        for key in ("theme", "lang", "persist"):
             if key in body:
                 self.settings[key] = body[key]
-        self._sync_persisted_roots()
-        self._json(200, {k: v for k, v in self.settings.items() if k != "roots"})
+        self._persist_now()
+        self._json(200, {k: v for k, v in self.settings.items()
+                         if k not in ("roots", "ui")})
 
     # ---------------- model roots ---------------- #
 
@@ -380,7 +395,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "(any depth)")
         if path not in SESSION_ROOTS:
             SESSION_ROOTS.append(path)
-            self._sync_persisted_roots()
+            self._persist_now()
         count = sum(len(g["variants"]) for g in found)
         self._json(200, {"added": path, "models": len(found),
                          "variants": count})
@@ -393,7 +408,7 @@ class Handler(BaseHTTPRequestHandler):
         if path not in SESSION_ROOTS:
             raise _ApiError(404, "unknown session root")
         SESSION_ROOTS.remove(path)
-        self._sync_persisted_roots()
+        self._persist_now()
         self._json(200, {"removed": path})
 
     # ---------------- endpoints ---------------- #
@@ -561,9 +576,14 @@ def _release() -> None:
 
 def run_webui(args: argparse.Namespace) -> None:
     Handler.models_dir = args.models_dir
-    Handler.settings = {**DEFAULT_SETTINGS, **load_settings()}
-    if Handler.settings.get("persist_roots"):
-        for r in Handler.settings.get("roots", []):
+    stored = load_settings()
+    Handler.settings = {**DEFAULT_SETTINGS,
+                        **{k: v for k, v in stored.items() if k != "roots"}}
+    # migrate the old per-path toggle
+    if "persist_roots" in stored:
+        Handler.settings["persist"] = bool(stored.get("persist_roots"))
+    if Handler.settings.get("persist"):
+        for r in stored.get("roots", []):
             if Path(r).is_dir() and r not in SESSION_ROOTS:
                 SESSION_ROOTS.append(r)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)

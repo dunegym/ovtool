@@ -62,6 +62,10 @@
   #settings-panel h2 { margin: 0 0 12px; font-size: 15px; }
   .chk { display: flex; align-items: center; gap: 7px; font-size: 12.5px;
          color: var(--dim); margin-top: 6px; cursor: pointer; }
+  /* equal heights for the path input and its + button */
+  #root-add-row { align-items: center; }
+  #root-add-row #root-input { margin-bottom: 0; height: 34px; }
+  #btn-add-root { flex: 0 0 auto; height: 34px; padding: 0 12px; line-height: 1; }
   .kind-label { font-size: 11px; color: var(--dim); margin: 6px 0 3px;
                 font-family: var(--mono); }
   button { background: var(--accent); color: #08121e; border: 0; border-radius: 6px;
@@ -151,9 +155,9 @@
       <option value="light" data-i18n="light">Light</option>
     </select>
     <div class="kind-label" data-i18n="extraPaths">Extra model paths</div>
-    <div class="row">
+    <div class="row" id="root-add-row">
       <input type="text" id="root-input">
-      <button id="btn-add-root" class="sec" style="flex:0 0 auto;padding:7px 12px">+</button>
+      <button id="btn-add-root" class="sec">+</button>
     </div>
     <div id="roots-list"></div>
     <label class="chk"><input type="checkbox" id="set-persist">
@@ -252,7 +256,7 @@ let lastStatus = {};
 const I18N = {
   en: { settings: "Settings", language: "Language", theme: "Theme",
         dark: "Dark", light: "Light", extraPaths: "Extra model paths",
-        persist: "Persist paths across restarts", ok: "OK",
+        persist: "Persist settings across restarts", ok: "OK",
         modelH: "Model", category: "category", modelL: "model",
         quantization: "quantization", deviceH: "Device",
         segmented: "segmented (image only)",
@@ -272,7 +276,7 @@ const I18N = {
         negPh: "Negative prompt (optional)" },
   zh: { settings: "设置", language: "语言", theme: "界面主题",
         dark: "深色", light: "浅色", extraPaths: "额外模型路径",
-        persist: "持久化保存（重启后保留）", ok: "确定",
+        persist: "持久化保存设置（重启后保留）", ok: "确定",
         modelH: "模型", category: "类别", modelL: "模型",
         quantization: "量化", deviceH: "设备",
         segmented: "分段执行（仅生图）",
@@ -302,19 +306,68 @@ function applyLang() {
 }
 
 /* ---------------- settings ---------------- */
-let SETTINGS = { theme: "dark", lang: "en", persist_roots: false };
+let SETTINGS = { theme: "dark", lang: "en", persist: false };
 
 function applyTheme() {
   document.body.classList.toggle("light", SETTINGS.theme === "light");
 }
 
+/* captured UI state: selections + generation params */
+function collectUI() {
+  return {
+    kind: $("sel-kind").value, model: $("sel-model").value,
+    variant: $("sel-variant").value, device: $("device").value,
+    chat: { max: $("p-max").value, temp: $("p-temp").value,
+            top_p: $("p-topp").value, seed: $("p-seed").value },
+    image: { w: $("i-w").value, h: $("i-h").value, steps: $("i-steps").value,
+             cfg: $("i-cfg").value, num: $("i-num").value, seed: $("i-seed").value },
+  };
+}
+
+function applyUI(ui) {
+  if (!ui || typeof ui !== "object") return;
+  const fire = (id, v) => {
+    if (v === undefined || v === null || v === "") return false;
+    const el = $(id);
+    if (![...el.options].some(o => o.value === v)) return false;
+    el.value = v; el.dispatchEvent(new Event("change")); return true;
+  };
+  const restored = fire("sel-kind", ui.kind);
+  fire("sel-model", ui.model);
+  fire("sel-variant", ui.variant);
+  fire("device", ui.device);
+  const set = (id, v) => { if (v !== undefined && v !== null && v !== "")
+    $(id).value = v; };
+  if (ui.chat) { set("p-max", ui.chat.max); set("p-temp", ui.chat.temp);
+    set("p-topp", ui.chat.top_p); set("p-seed", ui.chat.seed); }
+  if (ui.image) { set("i-w", ui.image.w); set("i-h", ui.image.h);
+    set("i-steps", ui.image.steps); set("i-cfg", ui.image.cfg);
+    set("i-num", ui.image.num); set("i-seed", ui.image.seed); }
+  return restored;
+}
+
+let uiSyncTimer = null;
+function scheduleUISync() {
+  if (!SETTINGS.persist) return;
+  clearTimeout(uiSyncTimer);
+  uiSyncTimer = setTimeout(() => {
+    fetch("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ui: collectUI() }) });
+  }, 800);
+}
+
 async function loadSettings() {
-  try { Object.assign(SETTINGS, await (await fetch("/api/settings")).json()); }
-  catch (e) { /* keep defaults */ }
+  try {
+    const s = await (await fetch("/api/settings")).json();
+    Object.assign(SETTINGS, s);
+    if (s.persist_roots !== undefined && s.persist === undefined)
+      SETTINGS.persist = !!s.persist_roots;
+  } catch (e) { /* keep defaults */ }
   LANG = I18N[SETTINGS.lang] ? SETTINGS.lang : "en";
   $("set-lang").value = LANG;
   $("set-theme").value = SETTINGS.theme;
-  $("set-persist").checked = !!SETTINGS.persist_roots;
+  $("set-persist").checked = !!SETTINGS.persist;
   applyTheme();
   applyLang();
 }
@@ -335,7 +388,14 @@ $("settings-overlay").onclick = (e) => {
 $("set-lang").onchange = (e) => { LANG = e.target.value; applyLang();
   saveSettings({ lang: LANG }); };
 $("set-theme").onchange = (e) => saveSettings({ theme: e.target.value });
-$("set-persist").onchange = (e) => saveSettings({ persist_roots: e.target.checked });
+$("set-persist").onchange = (e) => saveSettings(
+  e.target.checked ? { persist: true, ui: collectUI() } : { persist: false });
+["sel-kind", "sel-model", "sel-variant", "device",
+ "p-max", "p-temp", "p-topp", "p-seed",
+ "i-w", "i-h", "i-steps", "i-cfg", "i-num", "i-seed"].forEach(id => {
+  $(id).addEventListener("change", scheduleUISync);
+  $(id).addEventListener("input", scheduleUISync);
+});
 
 /* ---------------- tabs ---------------- */
 for (const tab of document.querySelectorAll(".tab"))
@@ -667,8 +727,10 @@ $("btn-add-root").onclick = addRoot;
 $("root-input").onkeydown = (e) => { if (e.key === "Enter") addRoot(); };
 
 /* ---------------- boot ---------------- */
-loadSettings().then(() => { refreshCatalog(); refreshRoots(); });
-refreshDevices();
+loadSettings()
+  .then(() => Promise.all([refreshCatalog(), refreshDevices()]))
+  .then(() => applyUI(SETTINGS.ui))
+  .then(() => refreshRoots());
 fetch("/api/status").then(r => r.json()).then(renderStatus);
 startPolling();
 </script>

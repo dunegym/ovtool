@@ -63,8 +63,11 @@ directory, click `+`, and its models (found recursively) join the
 category → model → quantization cascade for the session. Both the box and the
 other UI preferences (dark/light theme, English/中文 language) live behind the
 ⚙ button in the top-right corner; enabling *Persist paths across restarts*
-saves added roots to `~/.ovtool/webui_settings.json` so they survive restarts
-(the file also carries theme/language choices).
+saves the whole panel — theme, language, extra roots and the UI state
+(model/device selections and generation parameters, synced as you
+change them) — to `~/.ovtool/webui_settings.json` so everything
+survives restarts; disabling it removes the file and the next start
+falls back to defaults.
 
 ### `ovtool devices`
 
