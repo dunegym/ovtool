@@ -97,6 +97,30 @@ ovtool convert vlm openbmb/MiniCPM-V-2_6 -m ./minicpmv-int4 --sym
 ovtool convert image stabilityai/sd-turbo -m ./sd-turbo-ir --weight-format int8
 ```
 
+### `ovtool download`
+
+Downloads a Hugging Face repo — or a single subfolder of it — to a local
+directory, with a choice of **endpoint**: `huggingface.co` (default) or
+`hf-mirror.com` (mirror for blocked networks), plus an optional `--proxy`:
+
+```bash
+# a whole repo
+ovtool download Qwen/Qwen3-0.6B -o ./qwen3
+
+# one quantization variant out of a multi-model repo
+ovtool download dunegym/openvino-models \
+    --subfolder llm/Qwen3-0.6B/int4-sym-g128 -o ./qwen3-sym
+
+# via the mirror endpoint
+ovtool download Qwen/Qwen3-0.6B --endpoint hf-mirror.com -o ./qwen3
+```
+
+Downloads resume per file (huggingface_hub cache) and print per-file
+progress. The web UI offers the same feature in its settings panel: repo id,
+optional subfolder, destination, endpoint and proxy, with a live progress
+line — and the downloaded directory is added to the model catalog
+automatically when it contains OpenVINO models.
+
 ### `ovtool generate` / `ovtool chat` (LLM)
 
 Shared options: `-m` model directory; `-d` device (`CPU`/`GPU`/`NPU`/`AUTO`/`HETERO:GPU,CPU`…);

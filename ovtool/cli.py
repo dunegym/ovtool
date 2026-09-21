@@ -55,6 +55,10 @@ def main(argv: list[str] | None = None) -> None:
     from .convert import add_convert_parser
     add_convert_parser(sub)
 
+    # download
+    from .download import add_parser as add_download_parser
+    add_download_parser(sub)
+
     # llm
     from .llm import add_parsers as add_llm_parsers
     add_llm_parsers(sub)

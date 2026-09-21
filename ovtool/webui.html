@@ -174,7 +174,20 @@
     </div>
     <div id="roots-list"></div>
     <label class="chk"><input type="checkbox" id="set-persist">
-      <span data-i18n="persist">Persist paths across restarts</span></label>
+      <span data-i18n="persist">Persist settings across restarts</span></label>
+    <div class="kind-label" data-i18n="downloadH" style="margin-top:16px">Download model (Hugging Face)</div>
+    <input type="text" id="dl-repo" data-i18n-ph="repoPh" placeholder="Qwen/Qwen3-0.6B">
+    <input type="text" id="dl-subfolder" data-i18n-ph="subfolderPh" placeholder="subfolder (optional), e.g. llm/Qwen3-0.6B/int4-sym-g128">
+    <input type="text" id="dl-dest" data-i18n-ph="destPh" placeholder="destination (default ./downloads/<name>)">
+    <div class="row">
+      <select id="dl-endpoint">
+        <option value="huggingface.co">huggingface.co</option>
+        <option value="hf-mirror.com">hf-mirror.com</option>
+      </select>
+      <input type="text" id="dl-proxy" data-i18n-ph="proxyPh" placeholder="proxy (optional)">
+    </div>
+    <button id="btn-download" class="sec" style="width:100%" data-i18n="downloadBtn">Download</button>
+    <div id="dl-progress" class="root-row" style="display:none"></div>
     <div class="row" style="margin-top:16px">
       <button id="btn-settings-close" data-i18n="ok">OK</button>
     </div>
@@ -286,7 +299,14 @@ const I18N = {
         noVariant: "no variant available",
         inputPh: "Type a message… (Enter to send, Shift+Enter for newline)",
         promptPh: "Prompt, e.g. a corgi surfing a wave",
-        negPh: "Negative prompt (optional)" },
+        negPh: "Negative prompt (optional)",
+        downloadH: "Download model (Hugging Face)",
+        repoPh: "repo id, e.g. Qwen/Qwen3-0.6B",
+        subfolderPh: "subfolder (optional), e.g. llm/Qwen3-0.6B/int4-sym-g128",
+        destPh: "destination (default ./downloads/<name>)",
+        proxyPh: "proxy (optional)",
+        downloadBtn: "Download",
+        dlRunning: "downloading…", dlDone: "done", dlFailed: "failed" },
   zh: { settings: "设置", language: "语言", theme: "界面主题",
         dark: "深色", light: "浅色", extraPaths: "额外模型路径",
         persist: "持久化保存设置（重启后保留）", ok: "确定",
@@ -306,7 +326,14 @@ const I18N = {
         noVariant: "无可用变体",
         inputPh: "输入消息…（回车发送，Shift+回车换行）",
         promptPh: "提示词，例如：a corgi surfing a wave",
-        negPh: "负向提示词（可选）" }
+        negPh: "负向提示词（可选）",
+        downloadH: "从 Hugging Face 下载模型",
+        repoPh: "仓库 id，例如 Qwen/Qwen3-0.6B",
+        subfolderPh: "子目录（可选），例如 llm/Qwen3-0.6B/int4-sym-g128",
+        destPh: "目标路径（默认 ./downloads/<名称>）",
+        proxyPh: "代理（可选）",
+        downloadBtn: "下载",
+        dlRunning: "下载中…", dlDone: "完成", dlFailed: "失败" }
 };
 let LANG = "en";
 const t = (k) => (I18N[LANG] || I18N.en)[k] || k;
@@ -403,6 +430,49 @@ $("set-lang").onchange = (e) => { LANG = e.target.value; applyLang();
 $("set-theme").onchange = (e) => saveSettings({ theme: e.target.value });
 $("set-persist").onchange = (e) => saveSettings(
   e.target.checked ? { persist: true, ui: collectUI() } : { persist: false });
+
+/* ---------------- remote download ---------------- */
+let dlTimer = null;
+
+function renderDownload(d) {
+  const box = $("dl-progress");
+  if (!d || (!d.active && !d.error && !d.done_at)) { box.style.display = "none"; return; }
+  box.style.display = "flex";
+  const pct = d.bytes_total ? Math.round(100 * d.bytes_done / d.bytes_total) : 0;
+  if (d.error)
+    box.innerHTML = `<span style="color:var(--err)" title="${d.error}">${t("dlFailed")}: ${d.repo}</span>`;
+  else if (d.done_at)
+    box.innerHTML = `<span style="color:var(--ok)">${t("dlDone")}: ${d.dest}</span>`;
+  else
+    box.innerHTML = `<span>${t("dlRunning")} ${pct}% · ${d.files_done}/${d.files_total} · ${d.current || ""}</span>`;
+}
+
+async function pollDownload() {
+  clearTimeout(dlTimer);
+  const d = await (await fetch("/api/download")).json();
+  renderDownload(d);
+  if (d.active || (!d.done_at && !d.error)) {
+    dlTimer = setTimeout(pollDownload, 1000);
+  } else if (d.done_at || d.error) {
+    refreshRoots(); refreshCatalog();
+  }
+}
+
+$("btn-download").onclick = async () => {
+  const body = {
+    repo: $("dl-repo").value.trim(),
+    subfolder: $("dl-subfolder").value.trim(),
+    dest: $("dl-dest").value.trim(),
+    endpoint: $("dl-endpoint").value,
+    proxy: $("dl-proxy").value.trim(),
+  };
+  if (!body.repo) return;
+  const resp = await fetch("/api/download", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await resp.json();
+  if (j.error) return alert(j.error);
+  pollDownload();
+};
 ["sel-kind", "sel-model", "sel-variant", "device",
  "p-max", "p-temp", "p-topp", "p-seed",
  "i-w", "i-h", "i-steps", "i-cfg", "i-num", "i-seed"].forEach(id => {

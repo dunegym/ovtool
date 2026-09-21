@@ -101,17 +101,38 @@ class ModelSlot:
 
 SLOT = ModelSlot()
 
+# in-flight remote download (one at a time), driven by /api/download
+DOWNLOAD: dict = {"active": False, "repo": None, "dest": None, "subfolder": None,
+                  "endpoint": None, "files_done": 0, "files_total": 0,
+                  "bytes_done": 0, "bytes_total": 0, "current": None,
+                  "error": None, "done_at": None}
+DOWNLOAD_LOCK = threading.Lock()
+
 
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #
 
+def _resolve_eq(a: str, b: str) -> bool:
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return a == b
+
+
 def all_roots(models_dir: str) -> list[str]:
-    """Default dir + $OVTOOL_MODELS_PATH roots + session roots (deduped)."""
-    roots = [models_dir]
-    for r in SESSION_ROOTS + extra_model_roots():
-        if r not in roots:
-            roots.append(r)
+    """Default dir + $OVTOOL_MODELS_PATH roots + session roots (deduped by
+    resolved path, so the models dir cannot join twice via an absolute path)."""
+    roots: list[str] = []
+    for r in [models_dir] + SESSION_ROOTS + extra_model_roots():
+        try:
+            key = str(Path(r).resolve())
+        except OSError:
+            key = r
+        if key not in roots:
+            roots.append(key)
+    # keep the configured default dir spelling first
+    roots[0] = models_dir
     return roots
 
 
@@ -327,6 +348,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/settings":
                 self._json(200, {k: v for k, v in self.settings.items()
                                  if k not in ("roots", "persist_roots")})
+            elif path == "/api/download":
+                self._json(200, DOWNLOAD)
             else:
                 raise _ApiError(404, f"unknown path: {path}")
         except _ApiError as e:
@@ -350,6 +373,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._add_root(body)
             elif path == "/api/settings":
                 self._update_settings(body)
+            elif path == "/api/download":
+                self._start_download(body)
             else:
                 raise _ApiError(404, f"unknown path: {path}")
         except _ApiError as e:
@@ -386,6 +411,55 @@ class Handler(BaseHTTPRequestHandler):
         self._json(200, {k: v for k, v in self.settings.items()
                          if k not in ("roots", "ui")})
 
+    # ---------------- remote download ---------------- #
+
+    def _start_download(self, body: dict) -> None:
+        from .download import ENDPOINTS, _default_dest
+        repo = (body.get("repo") or "").strip()
+        dest = (body.get("dest") or "").strip() or _default_dest(repo, body.get("subfolder"))
+        subfolder = (body.get("subfolder") or "").strip() or None
+        endpoint = (body.get("endpoint") or "huggingface.co").strip()
+        proxy = (body.get("proxy") or "").strip() or None
+        if not repo or "/" not in repo:
+            raise _ApiError(400, "repo must be a Hugging Face id like Qwen/Qwen3-0.6B")
+        if endpoint not in ENDPOINTS:
+            raise _ApiError(400, f"endpoint must be one of {', '.join(ENDPOINTS)}")
+        if Path(dest).exists() and any(Path(dest).iterdir()):
+            raise _ApiError(400, f"destination not empty: {dest}")
+        with DOWNLOAD_LOCK:
+            if DOWNLOAD["active"]:
+                raise _ApiError(409, "a download is already running")
+            DOWNLOAD.update({"active": True, "repo": repo, "dest": dest,
+                             "subfolder": subfolder, "endpoint": endpoint,
+                             "files_done": 0, "files_total": 0, "bytes_done": 0,
+                             "bytes_total": 0, "current": None, "error": None,
+                             "done_at": None})
+
+        def worker():
+            from .download import download_repo
+            try:
+                def on_progress(p):
+                    DOWNLOAD.update(p)
+                download_repo(repo, dest, endpoint=endpoint, subfolder=subfolder,
+                              proxy=proxy, on_progress=on_progress)
+                DOWNLOAD["done_at"] = time.time()
+                # make the downloaded models immediately usable
+                from .registry import find_local_models
+                if find_local_models([dest]):
+                    if not any(_resolve_eq(dest, r) for r in all_roots(self.models_dir)):
+                        SESSION_ROOTS.append(dest)
+                        self._persist_now()
+                else:
+                    print(f"[webui] download finished but no OpenVINO model "
+                          f"detected under {dest}")
+            except Exception as e:  # noqa: BLE001 - surfaced to the UI
+                DOWNLOAD["error"] = str(e)
+            finally:
+                DOWNLOAD["active"] = False
+
+        threading.Thread(target=worker, daemon=True).start()
+        self._json(200, {"started": True, "dest": dest})
+
     # ---------------- model roots ---------------- #
 
     def _add_root(self, body: dict) -> None:
@@ -395,8 +469,12 @@ class Handler(BaseHTTPRequestHandler):
         root = Path(path)
         if not root.is_dir():
             raise _ApiError(400, f"not a directory: {path}")
-        roots = all_roots(self.models_dir)
-        if str(root) in roots or path in roots:
+        try:
+            same_as_default = root.resolve() == Path(self.models_dir).resolve()
+        except OSError:
+            same_as_default = False
+        if same_as_default or any(
+                _resolve_eq(path, r) for r in all_roots(self.models_dir)):
             raise _ApiError(400, "root already active")
         found = find_local_models([path])
         if not found:
