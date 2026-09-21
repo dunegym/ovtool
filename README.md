@@ -60,7 +60,11 @@ containing exported OpenVINO artifacts (`openvino_model.xml` /
 llm / vlm / image. The web UI catalog (`ovtool webui`) picks up the same
 roots and additionally offers an **add-path box** in the sidebar: type any
 directory, click `+`, and its models (found recursively) join the
-category → model → quantization cascade for the session.
+category → model → quantization cascade for the session. Both the box and the
+other UI preferences (dark/light theme, English/中文 language) live behind the
+⚙ button in the top-right corner; enabling *Persist paths across restarts*
+saves added roots to `~/.ovtool/webui_settings.json` so they survive restarts
+(the file also carries theme/language choices).
 
 ### `ovtool devices`
 

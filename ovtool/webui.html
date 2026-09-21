@@ -14,6 +14,13 @@
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 14px/1.5 system-ui, "Segoe UI", sans-serif; height: 100vh;
          display: flex; flex-direction: column; }
+  body.light {
+    --bg: #eef2f6; --panel: #ffffff; --panel2: #e7edf4; --line: #c8d3df;
+    --text: #1b2733; --dim: #5b6b7c; --accent: #1f7ae0; --ok: #17945c;
+    --warn: #b07d0a; --err: #cf3434;
+  }
+  body.light .msg.user { background: #cfe2f7; }
+  body.light .msg.assistant { background: #f4f7fa; }
   header { display: flex; align-items: center; gap: 14px; padding: 10px 18px;
            background: var(--panel); border-bottom: 1px solid var(--line); }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; }
@@ -40,6 +47,21 @@
   .root-row span { overflow: hidden; text-overflow: ellipsis; }
   .root-x { background: none; color: var(--err); border: 0; cursor: pointer;
             font-size: 14px; padding: 0 2px; margin-left: 6px; flex-shrink: 0; }
+  /* settings modal */
+  #btn-settings { background: none; border: 0; color: var(--dim); cursor: pointer;
+                  font-size: 19px; padding: 2px 6px; margin-left: auto; }
+  #btn-settings:hover { color: var(--text); }
+  #settings-overlay { position: fixed; inset: 0; background: rgba(4,8,12,.55);
+                      display: none; align-items: flex-start;
+                      justify-content: center; z-index: 50; }
+  #settings-overlay.show { display: flex; }
+  #settings-panel { background: var(--panel); border: 1px solid var(--line);
+                    border-radius: 10px; margin-top: 8vh; width: 430px;
+                    max-width: 92vw; max-height: 80vh; overflow-y: auto;
+                    padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+  #settings-panel h2 { margin: 0 0 12px; font-size: 15px; }
+  .chk { display: flex; align-items: center; gap: 7px; font-size: 12.5px;
+         color: var(--dim); margin-top: 6px; cursor: pointer; }
   .kind-label { font-size: 11px; color: var(--dim); margin: 6px 0 3px;
                 font-family: var(--mono); }
   button { background: var(--accent); color: #08121e; border: 0; border-radius: 6px;
@@ -113,50 +135,69 @@
   <h1>ovtool webui</h1>
   <span class="tag" id="slot-tag">no model</span>
   <span id="status-dot"></span><span id="status-text" style="color:var(--dim)">idle</span>
+  <button id="btn-settings" title="settings">&#9881;</button>
 </header>
-<main>
-  <aside id="sidebar">
-    <h2>Model</h2>
-    <div class="kind-label">category</div>
-    <select id="sel-kind"></select>
-    <div class="kind-label">model</div>
-    <select id="sel-model"></select>
-    <div class="kind-label">quantization</div>
-    <select id="sel-variant"></select>
-    <div class="kind-label">extra model paths</div>
+<div id="settings-overlay">
+  <div id="settings-panel">
+    <h2 data-i18n="settings">Settings</h2>
+    <div class="kind-label" data-i18n="language">Language</div>
+    <select id="set-lang">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+    <div class="kind-label" data-i18n="theme">Theme</div>
+    <select id="set-theme">
+      <option value="dark" data-i18n="dark">Dark</option>
+      <option value="light" data-i18n="light">Light</option>
+    </select>
+    <div class="kind-label" data-i18n="extraPaths">Extra model paths</div>
     <div class="row">
-      <input type="text" id="root-input" placeholder="D:\ovmodels" style="margin-bottom:6px">
-      <button id="btn-add-root" class="sec" style="flex:0 0 auto;margin-bottom:6px;padding:7px 12px">+</button>
+      <input type="text" id="root-input">
+      <button id="btn-add-root" class="sec" style="flex:0 0 auto;padding:7px 12px">+</button>
     </div>
     <div id="roots-list"></div>
-    <p class="hint" style="margin-top:2px">recursive scan · session-scoped;
-      $OVTOOL_MODELS_PATH roots apply automatically</p>
+    <label class="chk"><input type="checkbox" id="set-persist">
+      <span data-i18n="persist">Persist paths across restarts</span></label>
+    <div class="row" style="margin-top:16px">
+      <button id="btn-settings-close" data-i18n="ok">OK</button>
+    </div>
+  </div>
+</div>
+<main>
+  <aside id="sidebar">
+    <h2 data-i18n="modelH">Model</h2>
+    <div class="kind-label" data-i18n="category">category</div>
+    <select id="sel-kind"></select>
+    <div class="kind-label" data-i18n="modelL">model</div>
+    <select id="sel-model"></select>
+    <div class="kind-label" data-i18n="quantization">quantization</div>
+    <select id="sel-variant"></select>
     <div id="catalog-empty" style="display:none" class="hint">
-      no models found under the models dir</div>
-    <h2>Device</h2>
+      <span data-i18n="noModels">no models found under the models dir</span></div>
+    <h2 data-i18n="deviceH">Device</h2>
     <select id="device"></select>
     <div id="seg-box">
-      <div class="kind-label">segmented (image only)</div>
+      <div class="kind-label" data-i18n="segmented">segmented (image only)</div>
       <input type="text" id="seg-devices" placeholder="NPU,NPU,GPU">
       <div class="row">
         <div><label class="hint">W</label><input type="number" id="seg-w" value="512"></div>
         <div><label class="hint">H</label><input type="number" id="seg-h" value="512"></div>
         <div><label class="hint">cfg</label><input type="number" id="seg-cfg" value="7.5" step="0.5"></div>
       </div>
-      <p class="hint">static geometry fixed at load; VAE stays off NPU</p>
+      <p class="hint" data-i18n="segHint">static geometry fixed at load; VAE stays off NPU</p>
     </div>
     <div class="row">
-      <button id="btn-load">Load</button>
-      <button id="btn-unload" class="sec">Unload</button>
+      <button id="btn-load" data-i18n="load">Load</button>
+      <button id="btn-unload" class="sec" data-i18n="unload">Unload</button>
     </div>
     <div id="slot-error"></div>
     <div id="slot-info">load a model to begin</div>
   </aside>
   <section style="flex:1; display:flex; flex-direction:column; min-width:0;">
     <div id="tabs">
-      <div class="tab active" data-pane="chat">Chat</div>
-      <div class="tab" data-pane="image">Image</div>
-      <div class="tab" data-pane="devices">Devices</div>
+      <div class="tab active" data-pane="chat" data-i18n="chatTab">Chat</div>
+      <div class="tab" data-pane="image" data-i18n="imageTab">Image</div>
+      <div class="tab" data-pane="devices" data-i18n="devicesTab">Devices</div>
     </div>
     <div id="panes">
       <div class="pane active" id="pane-chat">
@@ -166,35 +207,35 @@
           <label>temp <input id="p-temp" type="number" value="0" min="0" step="0.1"></label>
           <label>top_p <input id="p-topp" type="number" value="" placeholder="1" step="0.05"></label>
           <label>seed <input id="p-seed" type="number" value=""></label>
-          <label><input id="p-stream" type="checkbox" checked> stream</label>
-          <button class="sec" id="btn-clear" style="padding:4px 10px">clear</button>
+          <label><input id="p-stream" type="checkbox" checked> <span data-i18n="stream">stream</span></label>
+          <button class="sec" id="btn-clear" style="padding:4px 10px" data-i18n="clear">clear</button>
         </div>
         <div id="chat-form">
-          <textarea id="chat-input" class=" " placeholder="Type a message… (Enter to send, Shift+Enter for newline)"></textarea>
+          <textarea id="chat-input" class=" " data-i18n-ph="inputPh" placeholder="Type a message… (Enter to send, Shift+Enter for newline)"></textarea>
           <div style="display:flex;flex-direction:column;gap:6px">
             <input type="file" id="img-attach" accept="image/*" style="display:none">
             <button class="sec" id="btn-attach" style="padding:6px 10px">📷</button>
-            <button id="btn-send">Send</button>
+            <button id="btn-send" data-i18n="send">Send</button>
           </div>
         </div>
       </div>
       <div class="pane" id="pane-image">
         <div id="img-form">
-          <input type="text" id="i-prompt" class="full" placeholder="Prompt, e.g. a corgi surfing a wave">
-          <input type="text" id="i-neg" class="full" placeholder="Negative prompt (optional)">
-          <div><label>width</label><input type="number" id="i-w" value="512" step="64"></div>
-          <div><label>height</label><input type="number" id="i-h" value="512" step="64"></div>
-          <div><label>steps</label><input type="number" id="i-steps" value="20"></div>
-          <div><label>guidance</label><input type="number" id="i-cfg" value="7.5" step="0.5"></div>
-          <div><label>images</label><input type="number" id="i-num" value="1" min="1" max="8"></div>
-          <div><label>seed</label><input type="number" id="i-seed" placeholder="random"></div>
-          <div style="display:flex;align-items:flex-end"><button id="btn-gen" style="width:100%">Generate</button></div>
+          <input type="text" id="i-prompt" class="full" data-i18n-ph="promptPh" placeholder="Prompt, e.g. a corgi surfing a wave">
+          <input type="text" id="i-neg" class="full" data-i18n-ph="negPh" placeholder="Negative prompt (optional)">
+          <div><label data-i18n="width">width</label><input type="number" id="i-w" value="512" step="64"></div>
+          <div><label data-i18n="height">height</label><input type="number" id="i-h" value="512" step="64"></div>
+          <div><label data-i18n="steps">steps</label><input type="number" id="i-steps" value="20"></div>
+          <div><label data-i18n="guidance">guidance</label><input type="number" id="i-cfg" value="7.5" step="0.5"></div>
+          <div><label data-i18n="images">images</label><input type="number" id="i-num" value="1" min="1" max="8"></div>
+          <div><label data-i18n="seedLabel">seed</label><input type="number" id="i-seed" placeholder="random"></div>
+          <div style="display:flex;align-items:flex-end"><button id="btn-gen" style="width:100%" data-i18n="generate">Generate</button></div>
         </div>
         <div id="gallery"></div>
       </div>
       <div class="pane" id="pane-devices">
         <table id="dev-table">
-          <thead><tr><th>Device</th><th>Name</th><th>Type</th><th>Driver</th><th>Subdevices</th></tr></thead>
+          <thead><tr><th data-i18n="devCol">Device</th><th data-i18n="nameCol">Name</th><th data-i18n="typeCol">Type</th><th data-i18n="driverCol">Driver</th><th data-i18n="subCol">Subdevices</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -205,6 +246,96 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 let attachedImages = [], pollTimer = null, generating = false;
+let lastStatus = {};
+
+/* ---------------- i18n ---------------- */
+const I18N = {
+  en: { settings: "Settings", language: "Language", theme: "Theme",
+        dark: "Dark", light: "Light", extraPaths: "Extra model paths",
+        persist: "Persist paths across restarts", ok: "OK",
+        modelH: "Model", category: "category", modelL: "model",
+        quantization: "quantization", deviceH: "Device",
+        segmented: "segmented (image only)",
+        segHint: "static geometry fixed at load; VAE stays off NPU",
+        load: "Load", unload: "Unload", chatTab: "Chat", imageTab: "Image",
+        devicesTab: "Devices", stream: "stream", clear: "clear", send: "Send",
+        generate: "Generate", width: "width", height: "height", steps: "steps",
+        guidance: "guidance", images: "images", seedLabel: "seed",
+        devCol: "Device", nameCol: "Name", typeCol: "Type",
+        driverCol: "Driver", subCol: "Subdevices",
+        noModels: "no models found under the models dir",
+        noModel: "no model", loading: "loading…", ready: "ready",
+        idle: "idle", error: "error", loadFirst: "load a model to begin",
+        noVariant: "no variant available",
+        inputPh: "Type a message… (Enter to send, Shift+Enter for newline)",
+        promptPh: "Prompt, e.g. a corgi surfing a wave",
+        negPh: "Negative prompt (optional)" },
+  zh: { settings: "设置", language: "语言", theme: "界面主题",
+        dark: "深色", light: "浅色", extraPaths: "额外模型路径",
+        persist: "持久化保存（重启后保留）", ok: "确定",
+        modelH: "模型", category: "类别", modelL: "模型",
+        quantization: "量化", deviceH: "设备",
+        segmented: "分段执行（仅生图）",
+        segHint: "加载时固定静态几何；VAE 保持在 NPU 之外",
+        load: "加载", unload: "卸载", chatTab: "对话", imageTab: "生图",
+        devicesTab: "设备", stream: "流式", clear: "清空", send: "发送",
+        generate: "生成", width: "宽", height: "高", steps: "步数",
+        guidance: "引导", images: "数量", seedLabel: "种子",
+        devCol: "设备", nameCol: "名称", typeCol: "类型",
+        driverCol: "驱动", subCol: "子设备",
+        noModels: "模型目录下未找到模型",
+        noModel: "未加载模型", loading: "加载中…", ready: "就绪",
+        idle: "空闲", error: "错误", loadFirst: "加载模型以开始",
+        noVariant: "无可用变体",
+        inputPh: "输入消息…（回车发送，Shift+回车换行）",
+        promptPh: "提示词，例如：a corgi surfing a wave",
+        negPh: "负向提示词（可选）" }
+};
+let LANG = "en";
+const t = (k) => (I18N[LANG] || I18N.en)[k] || k;
+function applyLang() {
+  document.querySelectorAll("[data-i18n]").forEach(el =>
+    el.textContent = t(el.dataset.i18n));
+  document.querySelectorAll("[data-i18n-ph]").forEach(el =>
+    el.placeholder = t(el.dataset.i18nPh));
+  renderStatus(lastStatus);
+}
+
+/* ---------------- settings ---------------- */
+let SETTINGS = { theme: "dark", lang: "en", persist_roots: false };
+
+function applyTheme() {
+  document.body.classList.toggle("light", SETTINGS.theme === "light");
+}
+
+async function loadSettings() {
+  try { Object.assign(SETTINGS, await (await fetch("/api/settings")).json()); }
+  catch (e) { /* keep defaults */ }
+  LANG = I18N[SETTINGS.lang] ? SETTINGS.lang : "en";
+  $("set-lang").value = LANG;
+  $("set-theme").value = SETTINGS.theme;
+  $("set-persist").checked = !!SETTINGS.persist_roots;
+  applyTheme();
+  applyLang();
+}
+
+async function saveSettings(patch) {
+  Object.assign(SETTINGS, patch);
+  applyTheme();
+  await fetch("/api/settings", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+}
+
+$("btn-settings").onclick = () => $("settings-overlay").classList.add("show");
+$("btn-settings-close").onclick = () => $("settings-overlay").classList.remove("show");
+$("settings-overlay").onclick = (e) => {
+  if (e.target === $("settings-overlay"))
+    $("settings-overlay").classList.remove("show");
+};
+$("set-lang").onchange = (e) => { LANG = e.target.value; applyLang();
+  saveSettings({ lang: LANG }); };
+$("set-theme").onchange = (e) => saveSettings({ theme: e.target.value });
+$("set-persist").onchange = (e) => saveSettings({ persist_roots: e.target.checked });
 
 /* ---------------- tabs ---------------- */
 for (const tab of document.querySelectorAll(".tab"))
@@ -254,7 +385,7 @@ function populateVariants() {
 function setPicked() {
   const kind = $("sel-kind").value, name = $("sel-model").value;
   const path = $("sel-variant").value;
-  if (!path) { picked = null; updateSlotInfo("no variant available"); return; }
+  if (!path) { picked = null; updateSlotInfo(t("noVariant")); return; }
   const vname = path.split(/[\\/]/).pop();
   picked = { kind, path, name: `${name} / ${vname}` };
   $("seg-box").classList.toggle("show", kind === "image");
@@ -343,12 +474,14 @@ function startPolling() {
 }
 
 function renderStatus(s) {
+  lastStatus = s;
   const dot = $("status-dot"), txt = $("status-text"), tag = $("slot-tag");
   dot.className = s.loading ? "busy" : (s.loaded ? "ok" : "");
-  txt.textContent = s.loading ? "loading…" : (s.loaded ? "ready" : (s.error ? "error" : "idle"));
+  txt.textContent = s.loading ? t("loading") : (s.loaded ? t("ready")
+    : (s.error ? t("error") : t("idle")));
   tag.textContent = s.loaded || s.loading
     ? `${s.kind}:${s.name}${s.devices ? " [" + s.devices.join(",") + "]" : " on " + s.device}`
-    : "no model";
+    : t("noModel");
   if (s.loaded || s.loading) syncCascades(s.path);
   if (s.error && !s.loading) showSlotError(s.error);
   if (s.loaded) {
@@ -375,7 +508,7 @@ $("btn-load").onclick = loadModel;
 $("btn-unload").onclick = async () => {
   await fetch("/api/unload", { method: "POST" });
   const s = await (await fetch("/api/status")).json(); renderStatus(s);
-  updateSlotInfo("load a model to begin");
+  updateSlotInfo(t("loadFirst"));
 };
 
 /* ---------------- chat ---------------- */
@@ -534,7 +667,8 @@ $("btn-add-root").onclick = addRoot;
 $("root-input").onkeydown = (e) => { if (e.key === "Enter") addRoot(); };
 
 /* ---------------- boot ---------------- */
-refreshCatalog(); refreshDevices(); refreshRoots();
+loadSettings().then(() => { refreshCatalog(); refreshRoots(); });
+refreshDevices();
 fetch("/api/status").then(r => r.json()).then(renderStatus);
 startPolling();
 </script>

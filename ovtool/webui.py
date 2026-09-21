@@ -42,9 +42,31 @@ WEBUI_HTML = Path(__file__).parent / "webui.html"
 KIND_DIRS = ("llm", "vlm", "image")
 GENERATION_LOCK_TIMEOUT = 1800  # refuse queued generation after 30 min
 
-# extra model roots added at runtime through the UI (session-scoped);
-# $OVTOOL_MODELS_PATH roots always apply on top of these
+# extra model roots added at runtime through the UI; when the
+# persist_roots setting is on they are saved to SETTINGS_PATH and
+# reloaded at startup. $OVTOOL_MODELS_PATH roots always apply on top.
 SESSION_ROOTS: list[str] = []
+
+SETTINGS_PATH = Path.home() / ".ovtool" / "webui_settings.json"
+DEFAULT_SETTINGS = {"theme": "dark", "lang": "en", "persist_roots": False}
+
+
+def load_settings() -> dict:
+    try:
+        data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def save_settings(data: dict) -> None:
+    try:
+        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except OSError as e:
+        print(f"[webui] warning: could not save settings: {e}")
 
 
 class ModelSlot:
@@ -201,6 +223,14 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     models_dir: str = "./models"
+    settings: dict = dict(DEFAULT_SETTINGS)
+
+    def _sync_persisted_roots(self) -> None:
+        if self.settings.get("persist_roots"):
+            self.settings["roots"] = list(SESSION_ROOTS)
+        else:
+            self.settings.pop("roots", None)
+        save_settings(self.settings)
 
     # ---------------- plumbing ---------------- #
 
@@ -275,6 +305,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, {"default": self.models_dir,
                                  "env": extra_model_roots(),
                                  "session": list(SESSION_ROOTS)})
+            elif path == "/api/settings":
+                self._json(200, {k: v for k, v in self.settings.items()
+                                 if k != "roots"})
             else:
                 raise _ApiError(404, f"unknown path: {path}")
         except _ApiError as e:
@@ -296,6 +329,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._image(body)
             elif path == "/api/roots":
                 self._add_root(body)
+            elif path == "/api/settings":
+                self._update_settings(body)
             else:
                 raise _ApiError(404, f"unknown path: {path}")
         except _ApiError as e:
@@ -311,6 +346,21 @@ class Handler(BaseHTTPRequestHandler):
                 raise _ApiError(404, f"unknown path: {self.path}")
         except _ApiError as e:
             self._json(e.status, {"error": e.message})
+
+    # ---------------- settings ---------------- #
+
+    def _update_settings(self, body: dict) -> None:
+        if "theme" in body and body["theme"] not in ("dark", "light"):
+            raise _ApiError(400, "theme must be dark | light")
+        if "lang" in body and body["lang"] not in ("en", "zh"):
+            raise _ApiError(400, "lang must be en | zh")
+        if "persist_roots" in body and not isinstance(body["persist_roots"], bool):
+            raise _ApiError(400, "persist_roots must be a boolean")
+        for key in ("theme", "lang", "persist_roots"):
+            if key in body:
+                self.settings[key] = body[key]
+        self._sync_persisted_roots()
+        self._json(200, {k: v for k, v in self.settings.items() if k != "roots"})
 
     # ---------------- model roots ---------------- #
 
@@ -330,6 +380,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "(any depth)")
         if path not in SESSION_ROOTS:
             SESSION_ROOTS.append(path)
+            self._sync_persisted_roots()
         count = sum(len(g["variants"]) for g in found)
         self._json(200, {"added": path, "models": len(found),
                          "variants": count})
@@ -342,6 +393,7 @@ class Handler(BaseHTTPRequestHandler):
         if path not in SESSION_ROOTS:
             raise _ApiError(404, "unknown session root")
         SESSION_ROOTS.remove(path)
+        self._sync_persisted_roots()
         self._json(200, {"removed": path})
 
     # ---------------- endpoints ---------------- #
@@ -509,6 +561,11 @@ def _release() -> None:
 
 def run_webui(args: argparse.Namespace) -> None:
     Handler.models_dir = args.models_dir
+    Handler.settings = {**DEFAULT_SETTINGS, **load_settings()}
+    if Handler.settings.get("persist_roots"):
+        for r in Handler.settings.get("roots", []):
+            if Path(r).is_dir() and r not in SESSION_ROOTS:
+                SESSION_ROOTS.append(r)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}"
     print(f"[ovtool] webui at {url}  (models dir: {args.models_dir})")
