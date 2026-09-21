@@ -35,10 +35,23 @@
              padding: 14px; overflow-y: auto; flex-shrink: 0; }
   #sidebar h2 { font-size: 12px; text-transform: uppercase; color: var(--dim);
                 margin: 4px 0 8px; letter-spacing: .08em; }
-  select, input[type=text], input[type=number] { width: 100%; background: var(--panel2);
-    color: var(--text); border: 1px solid var(--line); border-radius: 6px;
-    padding: 7px 9px; font-size: 13px; margin-bottom: 8px; }
-  select:focus, input:focus { outline: 1px solid var(--accent); }
+  select, input[type=text], input[type=number], textarea {
+    width: 100%; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 9px; font-size: 13px; margin-bottom: 8px;
+    font-family: inherit; }
+  select:focus, input:focus, textarea:focus { outline: 1px solid var(--accent); }
+  /* Chrome's autofill paints its own light background; keep theme colors */
+  input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px var(--panel2) inset;
+    -webkit-text-fill-color: var(--text);
+    caret-color: var(--text);
+    transition: background-color 99999s ease-in-out 0s;
+  }
+  input:autofill, textarea:autofill, select:autofill {
+    background: var(--panel2) !important; color: var(--text);
+  }
+  #chat-input { margin-bottom: 0; }
   .row { display: flex; gap: 8px; } .row > * { flex: 1; }
   .root-row { display: flex; justify-content: space-between; align-items: center;
               font-family: var(--mono); font-size: 11px; color: var(--dim);

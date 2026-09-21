@@ -253,7 +253,7 @@ models:
       int4-g64:
         devices: [GPU, CPU, AUTO]
         convert: "ovtool convert image stabilityai/sd-turbo -o ./sd-turbo-int4 --weight-format int4 --group-size 64"
-        note: group 64 required — UNet channel size 320 is not divisible by 128
+        note: group 64 required — UNet channel size 320 is not divisible by 128; NPU segmented load not possible (int4 UNet fails Level0 compilation) — use int8 for --devices NPU,...
 
   - id: SimianLuo/LCM_Dreamshaper_v7
     kind: image

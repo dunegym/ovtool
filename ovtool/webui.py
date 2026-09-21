@@ -167,6 +167,14 @@ def _load_model(spec: dict) -> None:
         SLOT.loading = True
         SLOT.path, SLOT.kind = spec["path"], spec["kind"]
         SLOT.device = spec["device"]
+        if spec.get("devices"):
+            # surface the segmented placement immediately: NPU compilation
+            # can take minutes, during which the UI must not claim the
+            # whole pipeline runs on the device dropdown's value
+            SLOT.devices = [d.strip().upper() for d in spec["devices"]]
+            SLOT.geometry = {k: spec[k] for k in
+                             ("num_images", "width", "height", "guidance_scale")
+                             if k in spec}
 
         # registry gate before spending minutes on a compile
         fake_args = argparse.Namespace(
@@ -188,8 +196,9 @@ def _load_model(spec: dict) -> None:
                 guidance_scale=float(spec.get("guidance_scale", 7.5)),
                 opt=None, scheduler=None)
             pipe = imagegen._open_pipeline(ovgenai, geo_args, image_mode=False)
-            SLOT.device = spec["device"]
-            if spec.get("devices"):
+            if not spec.get("devices"):
+                SLOT.device = spec["device"]
+            else:
                 SLOT.devices = [d.upper() for d in spec["devices"]]
                 SLOT.geometry = {k: geo_args.__dict__[k] for k in
                                  ("num_images", "width", "height", "guidance_scale")}
