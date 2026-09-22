@@ -311,6 +311,20 @@ models:
         convert: "ovtool convert image stabilityai/stable-diffusion-3.5-medium -o ./sd35m-int4 --weight-format int4 --group-size 64"
         note: 1024px/28 steps ~3m36s on iGPU
 
+  - id: black-forest-labs/FLUX.2-klein-4B
+    kind: image
+    match: ["flux.2-klein", "flux2-klein", "flux2_klein"]
+    recommended_device: GPU
+    variants:
+      int8:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image black-forest-labs/FLUX.2-klein-4B -o ./flux2k-int8 --weight-format int8"
+        note: distilled (8 steps), Apache-2.0; Qwen3 text encoder; 1024px/8 steps ~2m06s on iGPU; needs optimum-intel>=2.2.0
+      int4-g64:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image black-forest-labs/FLUX.2-klein-4B -o ./flux2k-int4 --weight-format int4 --group-size 64"
+        note: 1024px/8 steps ~2m13s on iGPU
+
 # global rules, evaluated for every matched entry
 global_rules:
   - when_device: NPU

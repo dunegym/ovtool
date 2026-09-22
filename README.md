@@ -260,6 +260,7 @@ ovtool/
 - Diffusion conversion + INT8 quantization (sd-turbo): ✅
 - Text-to-image model expansion (LCM-Dreamshaper-v7 / SD-1.5 / SSD-1B, int8 + int4-g64 each): ✅ generation verified on iGPU (LCM 8-step 512px ~19s; SSD-1B 25-step 1024px ~89s); includes the SDXL dual-tokenizer export fix (`tokenizer_2` IR)
 - **SD3.5-medium** (gated repo, 2.5B MMDiT + T5-XXL): ✅ both variants generation-verified on iGPU (1024px/28 steps: int8 ~3m22s, int4-g64 ~3m36s); required the SD3 pipeline-class fix and generalized triple-tokenizer export (`tokenizer_2` + `tokenizer_3` IR)
+- **FLUX.2-klein-4B** (Apache-2.0, 3.9B distilled, Qwen3 text encoder): ✅ both variants generation-verified on iGPU (1024px/8 steps: int8 ~2m06s, int4-g64 ~2m13s) after upgrading to optimum-intel 2.2.0
 - `image` text-to-image / `image2image` (GPU, seed reproducibility): ✅ (512×512×4 steps in seconds)
 - **NPU inference (Qwen3-0.6B symmetric INT4)**: ✅ TTFT ~1.5s, ~21 tok/s; `--max-prompt-len` / `--min-response-len` static-shape options verified
 - **Qwen3.5-0.8B / Qwen3.5-2B** (new native multimodal `qwen3_5` architecture, sym/asym INT4): ✅ text generation OK on GPU (2B ~33 tok/s; 0.8B NPU compile extremely slow)
@@ -270,7 +271,7 @@ ovtool/
 
 1. **Image input for Qwen3-VL / Qwen3.5**: conversion succeeds, but image+text inference via `VLMPipeline` fails with `Argument shapes are inconsistent` on GenAI 2026.3.1 (reproduced at every resolution). The master branch already has dedicated `InputsEmbedderQwen3VL/Qwen3_5` implementations — waiting for the next release. **Text-only mode is unaffected.**
 2. **VLM on NPU**: text mode of Qwen3.5-0.8B triggered `ZE_RESULT_ERROR_DEVICE_LOST` (driver hang, requires process restart) after a long compile on NPU. Recommend running only symmetric-INT4 pure LLMs on NPU (verified with qwen3-0.6b-sym).
-3. **FLUX.2-klein export**: optimum-intel 2.1.0 fails while tracing `pos_embed` with `Axis out of rank range` (tracked upstream in [issue #1767](https://github.com/huggingface/optimum-intel/issues/1767)). For image generation use SD/SDXL/Flux.1-family models (sd-turbo verified).
+3. **FLUX.2-klein export**: fixed by optimum-intel 2.2.0 (FLUX.2 support PR #1809 + dynamic-sequence fix #1846; the old 2.1.0 `pos_embed` tracing failure is gone). FLUX.2-klein-4B converts and generates on iGPU (1024px/8 steps ~2m06s int8 / ~2m13s int4-g64). Note the conversion env pairing: optimum-intel 2.2.0 + diffusers 0.39 (0.40 pulls an LTX2→Gemma4Unified import chain that needs unreleased transformers) + transformers 5.5.4; transformers 5.3+ drops qwen3_5 re-conversion (`pip install transformers==5.2.0` to restore — already-converted models are unaffected).
 4. **optimum version guards**: optimum-intel 2.1.0 pins stale `MAX_TRANSFORMERS_VERSION` values on newer architectures such as qwen3-vl/qwen2-vl; `convert vlm` relaxes them automatically (`_relax_stale_version_guards`). qwen3_5 additionally requires transformers==5.2.x (5.3+ removed `Qwen3_5DynamicCache`, while optimum pins `<5.6`; 5.2 satisfies both).
 
 ## Implementation Notes (lessons learned)
