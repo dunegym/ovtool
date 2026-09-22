@@ -56,6 +56,7 @@ def _pick_image_cls(model_id: str):
             OVFlux2KleinPipeline,
             OVFluxPipeline,
             OVLatentConsistencyModelPipeline,
+            OVStableDiffusion3Pipeline,
             OVStableDiffusionPipeline,
             OVStableDiffusionXLPipeline,
         )
@@ -65,6 +66,8 @@ def _pick_image_cls(model_id: str):
         return OVFlux2KleinPipeline
     if "Flux" in name:
         return OVFluxPipeline
+    if "StableDiffusion3" in name or "SD3" in name:
+        return OVStableDiffusion3Pipeline
     if "StableDiffusionXL" in name or "SDXL" in name:
         return OVStableDiffusionXLPipeline
     if "LatentConsistency" in name:
@@ -265,10 +268,16 @@ def run_convert(args: argparse.Namespace) -> None:
 
     # optimum-intel saves the model + configs; we add the converted tokenizer
     model.save_pretrained(out)
-    _save_tokenizer(args, out, subdir="tokenizer" if args.kind == "image" else None)
-    if args.kind == "image" and (out / "tokenizer_2").is_dir():
-        # SDXL-class second encoder: GenAI resolves text_encoder_2 -> tokenizer_2
-        _save_tokenizer(args, out, subdir="tokenizer_2", src_subfolder="tokenizer_2")
+    if args.kind == "image":
+        _save_tokenizer(args, out, subdir="tokenizer")
+        # SDXL carries two text encoders, SD3.x three (CLIP-L + CLIP-G + T5);
+        # GenAI maps text_encoder_N -> tokenizer_N, so each needs its own IR
+        for extra in sorted(out.glob("tokenizer_*")):
+            if extra.is_dir():
+                _save_tokenizer(args, out, subdir=extra.name,
+                                src_subfolder=extra.name)
+    else:
+        _save_tokenizer(args, out)
     if args.kind == "vlm":
         _save_processor(args, out)
     print(f"\nDone. OpenVINO IR written to: {out.resolve()}")

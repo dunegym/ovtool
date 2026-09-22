@@ -297,6 +297,20 @@ models:
         convert: "ovtool convert image segmind/SSD-1B -o ./ssd1b-int4 --weight-format int4 --group-size 64"
         note: group 64 required — UNet channel size 320 is not divisible by 128
 
+  - id: stabilityai/stable-diffusion-3.5-medium
+    kind: image
+    match: ["sd-3.5-medium", "sd3.5-medium", "stable-diffusion-3.5-medium"]
+    recommended_device: GPU
+    variants:
+      int8:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image stabilityai/stable-diffusion-3.5-medium -o ./sd35m-int8 --weight-format int8"
+        note: MMDiT (2.5B) + T5-XXL encoder; gated repo — accept the license on the model page first; 1024px/28 steps ~3m22s on iGPU; needs the triple-tokenizer export
+      int4-g64:
+        devices: [GPU, CPU, AUTO]
+        convert: "ovtool convert image stabilityai/stable-diffusion-3.5-medium -o ./sd35m-int4 --weight-format int4 --group-size 64"
+        note: 1024px/28 steps ~3m36s on iGPU
+
 # global rules, evaluated for every matched entry
 global_rules:
   - when_device: NPU
