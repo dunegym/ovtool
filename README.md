@@ -147,7 +147,7 @@ Generation parameters: `--max-new-tokens`, `--temperature` (>0 enables sampling)
 `--repetition-penalty`, `--rng-seed`, `--stop-tokens`; `--no-stream` disables streaming; `--stats` prints TTFT/TPOT/throughput.
 
 **NPU-specific options** (defaults applied automatically with `-d NPU`): `--max-prompt-len` (default 16384) and
-`--min-response-len` (default 128) set the static-shape compile budget. NPU models must be converted with
+`--min-response-len` (default 256) set the static-shape compile budget. NPU models must be converted with
 `ovtool convert llm ... --weight-format int4 --sym` (symmetric quantization).
 
 Chat-mode built-in commands: `/exit` to quit, `/reset` to clear history, `/system <text>` to set the system prompt.
@@ -309,7 +309,7 @@ image models but allows the segmented form; putting the VAE on NPU triggers a wa
 |---|---|---|
 | CPU | General use, accelerated by AVX2/AVX-512/AMX | LLMs work with INT4/INT8 |
 | GPU (iGPU / Arc / DC GPU) | Best for diffusion; good LLM throughput | Requires Intel graphics drivers |
-| NPU (Core Ultra) | Low-power LLM inference; diffusion in segmented mode (`image --devices NPU,NPU,GPU`) | **Symmetric INT4 required for LLMs** (`convert ... --sym`); static-shape execution — LLM budget via `--max-prompt-len` (default 16384) / `--min-response-len` (default 128), measured ~21 tok/s on Qwen3-0.6B with the local NPU 3720 |
+| NPU (Core Ultra) | Low-power LLM inference; diffusion in segmented mode (`image --devices NPU,NPU,GPU`) | **Symmetric INT4 required for LLMs** (`convert ... --sym`); static-shape execution — LLM budget via `--max-prompt-len` (default 16384) / `--min-response-len` (default 256), measured ~21 tok/s on Qwen3-0.6B with the local NPU 3720 |
 | AUTO / HETERO | Automatic selection / mixed execution | Useful when device capabilities are uncertain |
 
 ## Code Structure

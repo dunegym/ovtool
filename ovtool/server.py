@@ -465,5 +465,5 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--max-prompt-len", type=int, default=None,
                    help="NPU only: static prompt budget for compile (default 16384)")
     p.add_argument("--min-response-len", type=int, default=None,
-                   help="NPU only: static response budget for compile (default 128)")
+                   help="NPU only: static response budget for compile (default 256)")
     p.set_defaults(func=run_serve)
