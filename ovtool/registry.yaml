@@ -386,18 +386,16 @@ models:
       int8:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert vlm google/gemma-4-E2B-it -o ./gemma4-e2b-it-int8 --weight-format int8"
-  - id: google/gemma-4-E2B
-    kind: vlm
-    match: ["gemma-4-e2b"]
-    text_only: true
-    variants:
-      int4-asym-g128:
+      int4-sym-g128:
         devices: [CPU, GPU, AUTO]
-        convert: "ovtool convert vlm google/gemma-4-E2B -o ./gemma4-e2b-int4"
-        note: BASE (non-instruct) model — repeats itself and image input outputs blanks (not instruction-aligned); use gemma-4-E2B-it instead; ships no chat template (borrowed from the -it repo in the models repo copy)
-      int8:
+        convert: "ovtool convert vlm google/gemma-4-E2B-it -o ./gemma4-e2b-it-int4-sym --weight-format int4 --sym"
+      int4-awq-g128:
         devices: [CPU, GPU, AUTO]
-        convert: "ovtool convert vlm google/gemma-4-E2B -o ./gemma4-e2b-int8 --weight-format int8"
+        convert: "ovtool convert vlm google/gemma-4-E2B-it -o ./gemma4-e2b-it-awq --weight-format int4 --awq"
+        note: AWQ calibrates on textvqa (multimodal VLM calibration set)
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm google/gemma-4-E2B-it -o ./gemma4-e2b-it-fp16 --weight-format fp16"
 
 
   - id: Qwen/Qwen3-Embedding-0.6B
