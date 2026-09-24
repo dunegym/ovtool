@@ -11,6 +11,7 @@ separated), shared by the `ovtool models local` command and the web UI.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,7 +82,7 @@ def check(kind: str, model_str: str, device: str, args: argparse.Namespace) -> l
     segmented = kind == "image" and len(seg) == 3
 
     if entry is None:
-        if kind in ("llm", "vlm", "image", "tts"):
+        if kind in ("llm", "vlm", "image", "tts", "embed", "rerank"):
             issues.append(Issue(OK, "model not in built-in registry; skipping compatibility checks"))
         return issues
 
@@ -229,13 +230,25 @@ def detect_kind(model_dir: Path) -> str | None:
         if _config_model_type(model_dir) == "kokoro" or \
                 (model_dir / "voices").is_dir():
             return "tts"  # Kokoro export: single IR + voices/*.bin packs
+        arch = _config_architectures(model_dir)
+        if any("ForSequenceClassification" in a for a in arch):
+            return "rerank"  # cross-encoder reranker export
+        if arch and all(a.endswith("Model") for a in arch):
+            return "embed"  # plain backbone export (BertModel / XLMRobertaModel ...)
         return "llm"
     return None
 
 
+def _config_architectures(model_dir: Path) -> list[str]:
+    try:
+        cfg = json.loads((model_dir / "config.json").read_text(encoding="utf-8"))
+        return [str(a) for a in cfg.get("architectures", [])]
+    except (OSError, ValueError):
+        return []
+
+
 def _config_model_type(model_dir: Path) -> str:
     try:
-        import json
         cfg = json.loads((model_dir / "config.json").read_text(encoding="utf-8"))
         return str(cfg.get("model_type", "")).lower()
     except (OSError, ValueError):

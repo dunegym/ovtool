@@ -7,6 +7,7 @@ A multi-purpose inference CLI built on [OpenVINO GenAI](https://github.com/openv
 - **Browser WebUI**: pick any converted model, load it on a device and chat / generate images from the browser (`ovtool webui`)
 - **Multimodal (VLM) inference**: image + text Q&A (converted LLaVA / Qwen-VL / MiniCPM-V / InternVL models)
 - **Text-to-speech (TTS)**: SpeechT5 and Kokoro-82M synthesis to WAV, with speaker/voice selection, language and speed controls
+- **Embeddings & reranking**: text vectorization (query/document modes, cosine retrieval ranking) and cross-encoder reranking for RAG pipelines
 - **Image generation**: Text2Image and Image2Image with the SD / SDXL / Flux families
 - **Device selection & runtime options**: CPU / GPU / NPU / AUTO / HETERO, with pass-through OpenVINO runtime properties
 - **Model conversion & quantization**: one-command export of Hugging Face models to OpenVINO IR with INT8 / INT4 weight compression (AWQ supported)
@@ -82,6 +83,8 @@ Lists available OpenVINO devices with full device names, driver versions, and su
 | `vlm` | Vision-language models | `image-text-to-text` |
 | `image` | Diffusion image generation | Auto-selected per model (SD / SDXL / Flux / LCM) |
 | `tts` | Text-to-speech (SpeechT5 / Kokoro) | `text-to-audio` (defaults to fp16 — small, quantization-sensitive models) |
+| `embed` | Text embedding models (BGE / GTE / E5 / MiniLM ...) | `feature-extraction` (defaults to fp16) |
+| `rerank` | Cross-encoder rerankers (BGE-Reranker / ms-marco ...) | `text-classification` (defaults to fp16) |
 
 Common options:
 
@@ -233,6 +236,36 @@ warning. Output is 16-bit PCM mono WAV at the model's native rate
 (verified ~10x: these are small autoregressive models where per-step iGPU
 overhead dominates). NPU is rejected by the registry (not supported upstream).
 
+### `ovtool embed` / `ovtool rerank` (Retrieval)
+
+```bash
+# convert (pooling config from sentence-transformers is preserved automatically)
+ovtool convert embed BAAI/bge-small-en-v1.5 -o ./bge-small
+ovtool convert rerank BAAI/bge-reranker-v2-m3 -o ./bge-reranker
+
+# vectorize documents (prints dim / norm / preview; --json for full vectors)
+ovtool embed -m ./bge-small "OpenVINO is a toolkit" "A cat video"
+
+# retrieval ranking: cosine similarity of the query against every document
+ovtool embed -m ./bge-small --query "what is OpenVINO?" \
+    --query-instruction "Represent this sentence for searching relevant passages: " \
+    "OpenVINO optimizes inference" "A cat video" "An inference toolkit from Intel"
+
+# cross-encoder reranking (sigmoid relevance scores, sorted)
+ovtool rerank -m ./bge-reranker "what is OpenVINO?" \
+    "OpenVINO is an open-source inference toolkit" "A cat sits on the mat" \
+    "OpenVINO 支持 CPU、GPU 和 NPU 推理加速"
+```
+
+`embed` options: `--query` (query-side embedding; with document texts it
+becomes cosine ranking), `--pooling cls|mean` (default: auto from the copied
+`1_Pooling/config.json`, else mean — GenAI does not auto-detect pooling),
+`--no-normalize`, `--query-instruction` / `--embed-instruction` (bge / e5
+style prefixes), `--max-length`, `--batch-size`, `--json [--out FILE]`.
+`rerank` options: `--top-n`, `--json`. Both take `-d device` and `--opt`.
+BGE models work best with the query instruction above; E5 models use
+`--query-instruction "query: "` / `--embed-instruction "passage: "`.
+
 ### `ovtool image` / `ovtool image2image` (Diffusion)
 
 ```bash
@@ -281,6 +314,7 @@ ovtool/
 ├── webui.py/.html# Browser UI (webui)
 ├── vlm.py        # VLMPipeline: image-text multimodal
 ├── tts.py        # Text2SpeechPipeline: SpeechT5 / Kokoro speech synthesis
+├── embed.py      # TextEmbeddingPipeline / TextRerankPipeline: retrieval
 └── imagegen.py   # Text2Image / Image2Image
 ```
 
@@ -300,6 +334,8 @@ ovtool/
 - **Qwen3-VL-2B-Instruct INT4**: ✅ text generation OK
 - **TTS — SpeechT5** (`microsoft/speecht5_tts`, fp16 encoder/decoder/postnet/vocoder + tokenizer IR): ✅ CPU 4.1s of 16 kHz speech in 2.3s (~28.8k samples/s); GPU works but ~10x slower; default speaker embedding built into GenAI
 - **TTS — Kokoro-82M** (fp16 single IR + 54 voice packs): ✅ CPU 4.7s of 24 kHz speech in 2.7s with `--speaker af_heart --language en-us`; default-voice fallback, bad-voice listing and wrong-backend param warnings verified
+- **Embeddings — bge-small-en-v1.5** (fp16, 384-dim): ✅ CLS pooling auto-applied from the copied `1_Pooling` config; cosine retrieval ranking semantically correct on CPU/GPU; JSON vector dump verified
+- **Rerank — bge-reranker-v2-m3** (fp16, 568M multilingual): ✅ sigmoid scores rank a relevant English doc 0.9999 / Chinese doc 0.80 / irrelevant 0.0000 for an English query; `--top-n` verified on CPU
 - The `vlm` multimodal path is implemented per the official openvino-genai API; image+text inference was not verified end-to-end (see known limitations)
 
 ## Known Limitations (measured 2026-09)
@@ -320,4 +356,5 @@ ovtool/
 - **optimum-intel drops `model_kwargs` on the Python export path** (`from_pretrained(export=True)` → `_export` → `main_export` forwards no kwargs), which the SpeechT5 exporter requires for the vocoder — `convert tts` therefore calls `optimum.exporters.openvino.main_export` directly, with the library inferred per model (`transformers` vs optimum-intel's `kokoro` detection, without which the model_type-less Kokoro config crashes `AutoConfig`).
 - **In-place fp16 re-serialization fails on Windows**: `core.read_model()` keeps the original `.bin` memory-mapped, so `ov.serialize` cannot reopen the same path — serialize to a sibling `.fp16.*` file, release the model, then `os.replace` over the original.
 - **GPU TTS results are remote tensors**: `Tensor.data` raises `Not Implemented` on GPU outputs; `tts.py` copies to a host `ov.Tensor` via `copy_to` first (CPU tensors read directly).
+- **GenAI does not auto-detect embedding pooling**: `TextEmbeddingPipeline` defaults to CLS regardless of the model. `convert embed` preserves the sentence-transformers `1_Pooling/config.json` next to the IR and `ovtool embed` applies it (bge = CLS, MiniLM = mean), with `--pooling` as override. Rerank scores are post-processed by GenAI itself (sigmoid for single-logit cross-encoders).
 - **Broken `tokenizer.json` serialization for tiktoken-backed tokenizers**: under transformers 5.x, `save_pretrained` on tokenizers of newer models such as Qwen3 writes a `tokenizer.json` that encodes to empty results via the tokenizers library (silently broken). `_save_tokenizer` now loads the tokenizer from the original HF repo first and probes each candidate with a non-empty encoding check.

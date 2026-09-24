@@ -350,6 +350,31 @@ models:
         convert: "ovtool convert tts hexgrad/Kokoro-82M --trust-remote-code -o ./kokoro-fp16"
         note: export needs 'pip install kokoro' + --trust-remote-code; pick a voice with --speaker <name> from voices/*.bin (e.g. af_heart); languages en-us/en-gb end-to-end, es/fr-fr/hi/it/pt-br need espeak-ng, zh/ja not yet supported
 
+  - id: BAAI/bge-small-en-v1.5
+    kind: embed
+    match: ["bge-small"]
+    variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed BAAI/bge-small-en-v1.5 -o ./bge-small-fp16"
+        note: '384-dim English embedder, CLS pooling (1_Pooling config auto-applied); for retrieval add --query-instruction "Represent this sentence for searching relevant passages: "'
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed BAAI/bge-small-en-v1.5 -o ./bge-small-int8 --weight-format int8"
+        note: int8 embeddings are not bit-compatible with fp16 — index and queries must use the same variant
+
+  - id: BAAI/bge-reranker-v2-m3
+    kind: rerank
+    match: ["bge-reranker"]
+    variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert rerank BAAI/bge-reranker-v2-m3 -o ./bge-reranker-fp16"
+        note: multilingual (incl. zh) cross-encoder, 568M; relevance scores via sigmoid (higher = more relevant)
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert rerank BAAI/bge-reranker-v2-m3 -o ./bge-reranker-int8 --weight-format int8"
+
 # global rules, evaluated for every matched entry
 global_rules:
   - when_device: NPU

@@ -22,6 +22,7 @@ INT4_PRESETS = {
 }
 
 DEFAULT_SPEECHT5_VOCODER = "microsoft/speecht5_hifigan"
+POOLING_LOCAL = "1_Pooling/config.json"
 
 
 def _hint(module: str) -> SystemExit:
@@ -96,6 +97,46 @@ def _pick_tts_cls():
     except ImportError as e:
         raise _hint("optimum-intel") from e
     return cls
+
+
+def _pick_embed_cls():
+    try:
+        from optimum.intel import OVModelForFeatureExtraction as cls
+    except ImportError as e:
+        raise _hint("optimum-intel") from e
+    return cls
+
+
+def _pick_rerank_cls():
+    try:
+        from optimum.intel import OVModelForSequenceClassification as cls
+    except ImportError as e:
+        raise _hint("optimum-intel") from e
+    return cls
+
+
+def _copy_pooling_config(args: argparse.Namespace, out: Path) -> None:
+    """Preserve the sentence-transformers pooling config next to the export.
+
+    openvino-genai does not auto-detect pooling; 'ovtool embed' reads this
+    file (pooling_mode_cls / pooling_mode_mean) and applies it."""
+    import shutil
+
+    src = Path(args.model) / POOLING_LOCAL if Path(args.model).is_dir() else None
+    if src is None or not src.is_file():
+        try:
+            from huggingface_hub import hf_hub_download
+            src = Path(hf_hub_download(args.model, POOLING_LOCAL))
+        except Exception:
+            src = None
+    if src is not None and src.is_file():
+        dst = out / POOLING_LOCAL
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        print(f"Pooling config copied ({POOLING_LOCAL}).")
+    else:
+        print("No sentence-transformers 1_Pooling config found; 'ovtool embed' "
+              "defaults to MEAN pooling (override with --pooling).")
 
 
 def _compress_fp16_ir(xmls) -> None:
@@ -343,6 +384,12 @@ def run_convert(args: argparse.Namespace) -> None:
     if args.kind == "image":
         cls = _pick_image_cls(args.model)
         load_kwargs.pop("use_cache", None)
+    elif args.kind == "embed":
+        cls = _pick_embed_cls()
+        load_kwargs.pop("use_cache", None)
+    elif args.kind == "rerank":
+        cls = _pick_rerank_cls()
+        load_kwargs.pop("use_cache", None)
     else:
         cls = _pick_lm_cls(args.kind, args.trust_remote_code)
 
@@ -372,11 +419,14 @@ def run_convert(args: argparse.Namespace) -> None:
                                 src_subfolder=extra.name)
     else:
         _save_tokenizer(args, out)
+        if args.kind == "embed":
+            _copy_pooling_config(args, out)
     if args.kind == "vlm":
         _save_processor(args, out)
     print(f"\nDone. OpenVINO IR written to: {out.resolve()}")
     print("Run inference with: ovtool " +
-          {"llm": "chat", "vlm": "vlm", "image": "image"}[args.kind] +
+          {"llm": "chat", "vlm": "vlm", "image": "image",
+           "embed": "embed", "rerank": "rerank"}[args.kind] +
           f" -m {out}")
 
 
@@ -388,14 +438,17 @@ def add_convert_parser(sub: argparse._SubParsersAction) -> None:
                                    "  ovtool convert vlm openbmb/MiniCPM-V-2_6 -m ./minicpmv-int4 --weight-format int4 --sym\n"
                                    "  ovtool convert image stabilityai/sd-turbo -m ./sd-turbo-ir --weight-format int8\n"
                                    "  ovtool convert tts microsoft/speecht5_tts -o ./speecht5-fp16\n"
-                                   "  ovtool convert tts hexgrad/Kokoro-82M --trust-remote-code -o ./kokoro",
+                                   "  ovtool convert tts hexgrad/Kokoro-82M --trust-remote-code -o ./kokoro\n"
+                                   "  ovtool convert embed BAAI/bge-small-en-v1.5 -o ./bge-small\n"
+                                   "  ovtool convert rerank BAAI/bge-reranker-v2-m3 -o ./bge-reranker",
                        formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("kind", choices=["llm", "vlm", "image", "tts"], help="Model family")
+    p.add_argument("kind", choices=["llm", "vlm", "image", "tts", "embed", "rerank"],
+                   help="Model family")
     p.add_argument("model", help="Hugging Face model id or local path")
     p.add_argument("-o", "--output", default=None, help="Output dir (default: ./<basename>-<wf>)")
     p.add_argument("--weight-format", default=None,
                    choices=["fp32", "fp16", "int8"] + list(INT4_PRESETS),
-                   help="Weight compression format (default int4; tts defaults to fp16)")
+                   help="Weight compression format (default int4; tts/embed/rerank default to fp16)")
     p.add_argument("--ratio", type=float, default=None, help="int4 compression ratio, 0.1-1.0 (default 1.0)")
     p.add_argument("--group-size", type=int, default=None, help="int4 group size (default 128; -1 = per-channel)")
     p.add_argument("--sym", action="store_true", help="Force symmetric quantization (recommended for NPU)")
@@ -410,8 +463,9 @@ def add_convert_parser(sub: argparse._SubParsersAction) -> None:
 
     def _set_output(args):
         if args.weight_format is None:
-            # TTS models are small and quantization-sensitive: keep fp16 default
-            args.weight_format = "fp16" if args.kind == "tts" else "int4"
+            # small quantization-sensitive families keep fp16 by default
+            args.weight_format = "fp16" \
+                if args.kind in ("tts", "embed", "rerank") else "int4"
         if args.output is None:
             base = args.model.rstrip("/").split("/")[-1]
             args.output = f"./{base}-{args.weight_format}"
