@@ -160,8 +160,9 @@ models:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert vlm Qwen/Qwen3-VL-2B-Instruct -o ./qwen3vl-2b-int4 --weight-format int4"
       int4-sym-g128:
-        devices: [CPU, GPU, AUTO]
+        devices: [CPU, GPU, NPU, AUTO]
         convert: "ovtool convert vlm Qwen/Qwen3-VL-2B-Instruct -o ./qwen3vl-2b-int4-sym --weight-format int4 --sym"
+        note: 'NPU verified (text-only): first compile ~34s (cached afterwards), ~4.8s per 40-token answer'
       int4-awq-g128:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert vlm Qwen/Qwen3-VL-2B-Instruct -o ./qwen3vl-2b-awq --weight-format int4 --awq"
@@ -182,8 +183,9 @@ models:
         convert: "ovtool convert vlm Qwen/Qwen3-VL-4B-Instruct -o ./qwen3vl-4b-int4 --weight-format int4"
         note: ~24 tok/s on iGPU
       int4-sym-g128:
-        devices: [CPU, GPU, AUTO]
+        devices: [CPU, GPU, NPU, AUTO]
         convert: "ovtool convert vlm Qwen/Qwen3-VL-4B-Instruct -o ./qwen3vl-4b-int4-sym --weight-format int4 --sym"
+        note: 'NPU verified (text-only): first compile ~94s (cached afterwards), ~10.7s per 40-token answer'
       int4-awq-g128:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert vlm Qwen/Qwen3-VL-4B-Instruct -o ./qwen3vl-4b-awq --weight-format int4 --awq"
@@ -430,11 +432,6 @@ global_rules:
       whole-pipeline diffusion on NPU is not supported (VAE decode is not
       NPU-capable); use segmented execution instead:
       ovtool image ... --devices NPU,NPU,GPU.
-  - when_device: NPU
-    forbid_kind: vlm
-    message: >-
-      VLM pipelines on NPU hung the driver in testing
-      (ZE_RESULT_ERROR_DEVICE_LOST); run VLMs on CPU/GPU.
   - when_device: NPU
     forbid_kind: tts
     message: >-

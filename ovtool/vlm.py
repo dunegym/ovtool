@@ -20,6 +20,24 @@ def load_images(paths: list[str]) -> list[ov.Tensor]:
     return tensors
 
 
+def open_vlm_pipeline(model_dir: str, device: str, opts: dict | None = None,
+                      npu_prompt_len: int | None = None) -> "ovgenai.VLMPipeline":
+    """VLMPipeline with the NPU static-shape budget applied.
+
+    On NPU GenAI compiles the language model with a static KV cache bounded
+    by MAX_PROMPT_LEN (prompts beyond it are rejected at generate time) and
+    runs the inputs/vision embedder on AUTO (CPU fallback). Compiled graphs
+    are cached next to the model, like the segmented image path."""
+    import openvino_genai as ovgenai
+
+    opts = dict(opts or {})
+    if device.upper().startswith("NPU"):
+        opts.setdefault("MAX_PROMPT_LEN", int(npu_prompt_len or 1024))
+        opts.setdefault("CACHE_DIR", model_dir.rstrip("/\\") + "/cache")
+    return ovgenai.VLMPipeline(model_dir, device=device,
+                               **({"config": opts} if opts else {}))
+
+
 def run_vlm(args: argparse.Namespace) -> None:
     import openvino_genai as ovgenai
 
@@ -27,10 +45,8 @@ def run_vlm(args: argparse.Namespace) -> None:
     device = resolve_device(args.device)
     opts = compile_options(args)
     print(f"[ovtool] loading VLM {args.model} on {device} ...")
-    kwargs = dict(device=device)
-    if opts:
-        kwargs["config"] = opts
-    pipe = ovgenai.VLMPipeline(args.model, **kwargs)
+    pipe = open_vlm_pipeline(args.model, device, opts,
+                             getattr(args, "max_prompt_len", None))
     cfg = build_generation_config(args)
     images = load_images(args.image) if args.image else None
 
@@ -63,5 +79,8 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--rng-seed", type=int, default=None)
     p.add_argument("--stop-tokens", nargs="*", default=None)
     p.add_argument("--opt", action="append", metavar="KEY=VALUE", help="Runtime option KEY=VALUE (repeatable)")
+    p.add_argument("--max-prompt-len", type=int, default=None,
+                   help="NPU only: static prompt budget for compile (default 1024; "
+                        "verified combos: Qwen3-VL int4-sym — see 'ovtool models')")
     p.add_argument("--stats", action="store_true", help="Print performance stats")
     p.set_defaults(func=run_vlm)
