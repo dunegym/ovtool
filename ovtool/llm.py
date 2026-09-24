@@ -76,9 +76,9 @@ def open_llm_pipeline(model_dir: str, device: str, opts: dict | None = None,
                       npu_shape: tuple[int, int] | None = None) -> ovgenai.LLMPipeline:
     opts = dict(opts or {})
     # NPU executes LLMs with static shapes; the prompt/response budget must be
-    # fixed at compile time via device properties (GenAI defaults 1024/128)
+    # fixed at compile time via device properties
     if device.upper().startswith("NPU"):
-        max_prompt, min_response = npu_shape or (1024, 128)
+        max_prompt, min_response = npu_shape or (16384, 128)
         opts.setdefault("MAX_PROMPT_LEN", int(max_prompt))
         opts.setdefault("MIN_RESPONSE_LEN", int(min_response))
         opts.setdefault("PERFORMANCE_HINT", "LATENCY")
@@ -87,7 +87,7 @@ def open_llm_pipeline(model_dir: str, device: str, opts: dict | None = None,
 
 def _npu_shape_from_args(args: argparse.Namespace):
     if getattr(args, "max_prompt_len", None) or getattr(args, "min_response_len", None):
-        return (args.max_prompt_len or 1024, args.min_response_len or 128)
+        return (args.max_prompt_len or 16384, args.min_response_len or 128)
     return None
 
 
@@ -155,7 +155,7 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     common.add_argument("--opt", action="append", metavar="KEY=VALUE",
                         help="Runtime option, e.g. --opt perf_mode=THROUGHPUT --opt inference_num_threads=8 (repeatable)")
     common.add_argument("--max-prompt-len", type=int, default=None,
-                        help="NPU only: static prompt budget for compile (default 1024). "
+                        help="NPU only: static prompt budget for compile (default 16384). "
                              "Requires a symmetric-INT4 model (convert with --sym).")
     common.add_argument("--min-response-len", type=int, default=None,
                         help="NPU only: static response budget for compile (default 128)")
