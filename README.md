@@ -348,6 +348,8 @@ ovtool/
 - **Rerank — bge-reranker-v2-m3** (fp16, 568M multilingual): ✅ sigmoid scores rank a relevant English doc 0.9999 / Chinese doc 0.80 / irrelevant 0.0000 for an English query; `--top-n` verified on CPU
 - **Qwen3-Embedding-0.6B** (fp16 via `convert embed`, 1024-dim): ✅ LAST_TOKEN pooling + official query instruction auto-applied; cosine ranking correct across en+zh (relevant 0.81–0.83 vs irrelevant 0.23)
 - **Qwen3-Reranker-0.6B** (int4 via `convert llm`): ✅ official yes/no template auto-applied — P(yes) 0.986/0.969 for relevant en/zh docs vs 0.010 irrelevant (raw query+doc without the template scores near-random; never bypass it)
+- **google/gemma-4-E2B-it** (int4 VLM, effective-2B MatFormer with per-layer embeddings): ✅ text (en+zh) and **image input** verified — ~26 tok/s CPU, ~20 tok/s GPU with 0.5s TTFT; the repo's own `chat_template.jinja` (tool-calling capable) renders fine in GenAI
+- **google/gemma-4-E2B** (base, int4): ⚠️ runs (~26 tok/s CPU) but repeats itself and image input yields blanks — base models are not instruction-aligned; prefer `-it`
 - The `vlm` multimodal path is implemented per the official openvino-genai API; image+text inference was not verified end-to-end (see known limitations)
 
 ## Known Limitations (measured 2026-09)
@@ -357,6 +359,7 @@ ovtool/
 3. **FLUX.2-klein export**: fixed by optimum-intel 2.2.0 (FLUX.2 support PR #1809 + dynamic-sequence fix #1846; the old 2.1.0 `pos_embed` tracing failure is gone). FLUX.2-klein-4B converts and generates on iGPU (1024px/8 steps ~2m06s int8 / ~2m13s int4-g64). Note the conversion env pairing: optimum-intel 2.2.0 + diffusers 0.39 (0.40 pulls an LTX2→Gemma4Unified import chain that needs unreleased transformers) + transformers 5.5.4; transformers 5.3+ drops qwen3_5 re-conversion (`pip install transformers==5.2.0` to restore — already-converted models are unaffected).
 4. **optimum version guards**: optimum-intel 2.1.0 pins stale `MAX_TRANSFORMERS_VERSION` values on newer architectures such as qwen3-vl/qwen2-vl; `convert vlm` relaxes them automatically (`_relax_stale_version_guards`). qwen3_5 additionally requires transformers==5.2.x (5.3+ removed `Qwen3_5DynamicCache`, while optimum pins `<5.6`; 5.2 satisfies both).
 5. **TTS scope of the current GenAI release** (2026.3.1): only SpeechT5 and Kokoro-82M are supported by `Text2SpeechPipeline` — **Qwen3-TTS is not** (community OpenVINO conversions exist on HF but do not run through GenAI). Kokoro zh/ja voices ship in the pack but are not supported end-to-end (G2P); non-English languages (es/fr-fr/hi/it/pt-br) require espeak-ng installed.
+6. **Gemma-4 base models ship no chat template**: `google/gemma-4-E2B` (base) carries none in any file and transformers has no Gemma4 default — GenAI chat/VLM inference then fails with `chat_template.empty()`. The `-it` sibling repo has `chat_template.jinja`; `convert vlm` now warns when the export lacks a template. The models-repo copy of the base model embeds the `-it` template so it runs, but output quality is base-grade (repetitions, blank image descriptions) — use `-it`.
 
 ## Implementation Notes (lessons learned)
 

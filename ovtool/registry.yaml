@@ -375,6 +375,31 @@ models:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert rerank BAAI/bge-reranker-v2-m3 -o ./bge-reranker-int8 --weight-format int8"
 
+  - id: google/gemma-4-E2B-it
+    kind: vlm
+    match: ["gemma-4-e2b-it"]
+    variants:
+      int4-asym-g128:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm google/gemma-4-E2B-it -o ./gemma4-e2b-it-int4"
+        note: instruction-tuned omni VLM (vision+audio+text; audio not wired in GenAI VLMPipeline) — text + image verified, ~26 tok/s CPU / ~20 tok/s GPU (0.5s TTFT), zh+en answers correct; E2B = effective-2B (MatFormer per-layer embeddings export)
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm google/gemma-4-E2B-it -o ./gemma4-e2b-it-int8 --weight-format int8"
+  - id: google/gemma-4-E2B
+    kind: vlm
+    match: ["gemma-4-e2b"]
+    text_only: true
+    variants:
+      int4-asym-g128:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm google/gemma-4-E2B -o ./gemma4-e2b-int4"
+        note: BASE (non-instruct) model — repeats itself and image input outputs blanks (not instruction-aligned); use gemma-4-E2B-it instead; ships no chat template (borrowed from the -it repo in the models repo copy)
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert vlm google/gemma-4-E2B -o ./gemma4-e2b-int8 --weight-format int8"
+
+
   - id: Qwen/Qwen3-Embedding-0.6B
     kind: embed
     match: ["qwen3-embedding"]

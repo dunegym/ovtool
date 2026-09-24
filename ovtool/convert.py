@@ -326,6 +326,21 @@ def _save_processor(args: argparse.Namespace, out: Path) -> None:
         proc.save_pretrained(out)
     except Exception as e:
         print(f"Warning: processor save failed ({e})")
+    # GenAI pipelines require a chat template; base-model repos (e.g.
+    # google/gemma-4-E2B) sometimes ship none — surface it instead of failing
+    # at inference time
+    try:
+        import json
+        has_template = (out / "chat_template.jinja").exists()
+        if not has_template:
+            tc = json.loads((out / "tokenizer_config.json").read_text(encoding="utf-8"))
+            has_template = bool(tc.get("chat_template"))
+        if not has_template:
+            print("Warning: no chat template in the export (base models often ship "
+                  "none); GenAI chat/VLM inference needs one — copy "
+                  "chat_template.jinja from an -it sibling repo into the model dir.")
+    except (OSError, ValueError):
+        pass
 
 
 def _relax_stale_version_guards() -> None:
