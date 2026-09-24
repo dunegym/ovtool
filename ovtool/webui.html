@@ -9,6 +9,9 @@
     --bg: #101418; --panel: #171d24; --panel2: #1e2630; --line: #2a3542;
     --text: #dce5ee; --dim: #8496a8; --accent: #4da3ff; --ok: #3ecf8e;
     --warn: #f0b429; --err: #ff6b6b; --mono: ui-monospace, Consolas, monospace;
+    /* render native form controls (number spinners, scrollbars, select
+       dropdown) in the dark palette instead of the UA's light widgets */
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
@@ -18,6 +21,7 @@
     --bg: #eef2f6; --panel: #ffffff; --panel2: #e7edf4; --line: #c8d3df;
     --text: #1b2733; --dim: #5b6b7c; --accent: #1f7ae0; --ok: #17945c;
     --warn: #b07d0a; --err: #cf3434;
+    color-scheme: light;
   }
   body.light .msg.user { background: #cfe2f7; }
   body.light .msg.assistant { background: #f4f7fa; }
@@ -40,6 +44,13 @@
     border: 1px solid var(--line); border-radius: 6px;
     padding: 7px 9px; font-size: 13px; margin-bottom: 8px;
     font-family: inherit; }
+  /* number spinners (with color-scheme) sit quiet on the panel and
+     sharpen on hover/active fields */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button {
+    opacity: 0.45; cursor: pointer; transition: opacity .15s ease; }
+  input[type=number]:hover::-webkit-inner-spin-button,
+  input[type=number]:focus::-webkit-inner-spin-button { opacity: 1; }
   select:focus, input:focus, textarea:focus { outline: 1px solid var(--accent); }
   /* Chrome's autofill paints its own light background; keep theme colors */
   input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
