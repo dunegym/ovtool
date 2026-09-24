@@ -67,6 +67,10 @@ def main(argv: list[str] | None = None) -> None:
     from .vlm import add_parser as add_vlm_parser
     add_vlm_parser(sub)
 
+    # tts
+    from .tts import add_parser as add_tts_parser
+    add_tts_parser(sub)
+
     # serve (OpenAI-compatible API)
     from .server import add_parser as add_serve_parser
     add_serve_parser(sub)
@@ -86,7 +90,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # registry compatibility gate: reject known-bad (model x device x params) combos
     kind_by_cmd = {"generate": "llm", "chat": "llm", "serve": "llm", "vlm": "vlm",
-                   "image": "image", "image2image": "image"}
+                   "image": "image", "image2image": "image", "tts": "tts"}
     kind = kind_by_cmd.get(args.command)
     if kind and getattr(args, "model", None) and getattr(args, "device", None):
         from .registry import check, report

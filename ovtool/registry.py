@@ -81,7 +81,7 @@ def check(kind: str, model_str: str, device: str, args: argparse.Namespace) -> l
     segmented = kind == "image" and len(seg) == 3
 
     if entry is None:
-        if kind in ("llm", "vlm", "image"):
+        if kind in ("llm", "vlm", "image", "tts"):
             issues.append(Issue(OK, "model not in built-in registry; skipping compatibility checks"))
         return issues
 
@@ -213,7 +213,7 @@ def model_roots(default_dir: str = DEFAULT_MODELS_DIR) -> list[str]:
 
 
 def detect_kind(model_dir: Path) -> str | None:
-    """Classify a directory as llm/vlm/image from its exported artifacts."""
+    """Classify a directory as llm/vlm/image/tts from its exported artifacts."""
     try:
         names = {p.name for p in model_dir.iterdir() if p.is_file()}
     except OSError:
@@ -223,9 +223,23 @@ def detect_kind(model_dir: Path) -> str | None:
     if "openvino_vision_embeddings_model.xml" in names or \
             "openvino_text_embeddings_model.xml" in names:
         return "vlm"
+    if "openvino_postnet.xml" in names or "openvino_vocoder.xml" in names:
+        return "tts"  # SpeechT5 export: encoder/decoder/postnet/vocoder IRs
     if "openvino_language_model.xml" in names or "openvino_model.xml" in names:
+        if _config_model_type(model_dir) == "kokoro" or \
+                (model_dir / "voices").is_dir():
+            return "tts"  # Kokoro export: single IR + voices/*.bin packs
         return "llm"
     return None
+
+
+def _config_model_type(model_dir: Path) -> str:
+    try:
+        import json
+        cfg = json.loads((model_dir / "config.json").read_text(encoding="utf-8"))
+        return str(cfg.get("model_type", "")).lower()
+    except (OSError, ValueError):
+        return ""
 
 
 _SKIP_DIRS = {"cache", "__pycache__", ".git", ".mimosa"}

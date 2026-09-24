@@ -21,6 +21,8 @@ INT4_PRESETS = {
     "int4_g32": (False, 32),
 }
 
+DEFAULT_SPEECHT5_VOCODER = "microsoft/speecht5_hifigan"
+
 
 def _hint(module: str) -> SystemExit:
     return SystemExit(
@@ -84,6 +86,86 @@ def _pick_lm_cls(kind: str, trust_remote_code: bool):
     except ImportError as e:
         raise _hint("optimum-intel") from e
     return cls
+
+
+def _pick_tts_cls():
+    """TTS model class; optimum-intel dispatches SpeechT5 vs Kokoro itself
+    from the model config (model_type 'kokoro' / SpeechT5 architecture)."""
+    try:
+        from optimum.intel import OVModelForTextToSpeechSeq2Seq as cls
+    except ImportError as e:
+        raise _hint("optimum-intel") from e
+    return cls
+
+
+def _compress_fp16_ir(xmls) -> None:
+    """Apply OpenVINO fp16 weight compression in place (the same offline
+    transformation optimum's .half() applies per model).
+
+    On Windows the read model keeps the original .bin mapped, so the
+    compressed model is serialized next to it and moved over the original.
+    """
+    import gc
+    import os
+
+    import openvino as ov
+    from openvino._offline_transformations import (apply_moc_transformations,
+                                                   compress_model_transformation)
+    core = ov.Core()
+    for xml in xmls:
+        m = core.read_model(str(xml))
+        apply_moc_transformations(m, cf=False)
+        compress_model_transformation(m)
+        tmp = xml.with_name(xml.stem + ".fp16.xml")
+        ov.serialize(m, str(tmp))
+        del m
+        gc.collect()  # release the mapped original .bin before replacing it
+        os.replace(tmp, xml)
+        os.replace(tmp.with_suffix(".bin"), xml.with_suffix(".bin"))
+        print(f"fp16 compression applied: {xml.name}")
+
+
+def _run_convert_tts(args: argparse.Namespace, out: Path, quant_cfg) -> None:
+    """Export a TTS model (SpeechT5 family or Kokoro) to OpenVINO IR.
+
+    optimum-intel's from_pretrained(export=True) drops model_kwargs on the
+    way to optimum's exporter, which the SpeechT5 path requires (vocoder);
+    route through optimum's main_export directly, then apply the requested
+    weight compression on the exported IRs.
+    """
+    try:
+        from optimum.exporters.openvino import main_export
+        from optimum.intel import OVConfig
+    except ImportError as e:
+        raise _hint("optimum-intel") from e
+
+    kokoro = "kokoro" in args.model.lower()
+    if kokoro and not args.trust_remote_code:
+        raise SystemExit("Kokoro export requires --trust-remote-code (custom "
+                         "modeling code from the HF repo); the 'kokoro' pip "
+                         "package is also needed at export time")
+    try:
+        # library inference handles the model_type-less Kokoro config
+        from optimum.intel.utils.modeling_utils import \
+            _infer_library_from_model_name_or_path
+        library_name = _infer_library_from_model_name_or_path(args.model)
+    except ImportError:
+        library_name = "kokoro" if kokoro else "transformers"
+    model_kwargs = None if kokoro else {"vocoder": args.vocoder}
+    main_export(model_name_or_path=args.model, output=str(out),
+                task="text-to-audio", library_name=library_name,
+                trust_remote_code=args.trust_remote_code,
+                model_kwargs=model_kwargs,
+                ov_config=OVConfig(dtype="fp32"))
+
+    xmls = sorted(out.glob("openvino_*.xml"))
+    if not xmls:
+        raise SystemExit(f"TTS export produced no OpenVINO IR in {out}")
+    if args.weight_format == "fp16":
+        _compress_fp16_ir(xmls)
+    elif quant_cfg is not None:  # int8 / int4 via optimum-intel (NNCF)
+        _pick_tts_cls().from_pretrained(
+            str(out), quantization_config=quant_cfg).save_pretrained(str(out))
 
 
 def _build_quant_cfg(args: argparse.Namespace):
@@ -232,6 +314,20 @@ def run_convert(args: argparse.Namespace) -> None:
     out.mkdir(parents=True, exist_ok=True)
     quant_cfg = _build_quant_cfg(args)
 
+    print(f"Exporting {args.model!r} ({args.kind}) -> {out} "
+          f"[weight-format={args.weight_format}] ...")
+    if args.kind == "tts":
+        _run_convert_tts(args, out, quant_cfg)
+        if "kokoro" in args.model.lower():
+            # Kokoro phonemizes via its own G2P (misaki/espeak-ng), no tokenizer
+            print("Kokoro export: no tokenizer conversion needed "
+                  "(phonemization runs inside GenAI).")
+        else:
+            _save_tokenizer(args, out)  # SpeechT5 needs openvino_tokenizer.xml
+        print(f"\nDone. OpenVINO IR written to: {out.resolve()}")
+        print(f"Run inference with: ovtool tts -m {out}")
+        return
+
     load_kwargs = dict(
         export=True,
         quantization_config=quant_cfg,
@@ -244,8 +340,6 @@ def run_convert(args: argparse.Namespace) -> None:
         # (_apply_model_size_based_quantization). Disable it for fp16/fp32.
         load_kwargs["load_in_8bit"] = False
 
-    print(f"Exporting {args.model!r} ({args.kind}) -> {out} "
-          f"[weight-format={args.weight_format}] ...")
     if args.kind == "image":
         cls = _pick_image_cls(args.model)
         load_kwargs.pop("use_cache", None)
@@ -292,24 +386,32 @@ def add_convert_parser(sub: argparse._SubParsersAction) -> None:
                                    "Examples:\n"
                                    "  ovtool convert llm Qwen/Qwen3-0.6B -o ./qwen3-06b-int4\n"
                                    "  ovtool convert vlm openbmb/MiniCPM-V-2_6 -m ./minicpmv-int4 --weight-format int4 --sym\n"
-                                   "  ovtool convert image stabilityai/sd-turbo -m ./sd-turbo-ir --weight-format int8",
+                                   "  ovtool convert image stabilityai/sd-turbo -m ./sd-turbo-ir --weight-format int8\n"
+                                   "  ovtool convert tts microsoft/speecht5_tts -o ./speecht5-fp16\n"
+                                   "  ovtool convert tts hexgrad/Kokoro-82M --trust-remote-code -o ./kokoro",
                        formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("kind", choices=["llm", "vlm", "image"], help="Model family")
+    p.add_argument("kind", choices=["llm", "vlm", "image", "tts"], help="Model family")
     p.add_argument("model", help="Hugging Face model id or local path")
     p.add_argument("-o", "--output", default=None, help="Output dir (default: ./<basename>-<wf>)")
-    p.add_argument("--weight-format", default="int4",
+    p.add_argument("--weight-format", default=None,
                    choices=["fp32", "fp16", "int8"] + list(INT4_PRESETS),
-                   help="Weight compression format (default int4)")
+                   help="Weight compression format (default int4; tts defaults to fp16)")
     p.add_argument("--ratio", type=float, default=None, help="int4 compression ratio, 0.1-1.0 (default 1.0)")
     p.add_argument("--group-size", type=int, default=None, help="int4 group size (default 128; -1 = per-channel)")
     p.add_argument("--sym", action="store_true", help="Force symmetric quantization (recommended for NPU)")
     p.add_argument("--asym", action="store_true", help="Force asymmetric quantization (better CPU/GPU accuracy)")
     p.add_argument("--awq", action="store_true", help="Enable AWQ (activation-aware weight quantization)")
     p.add_argument("--dataset", default=None, help="Calibration dataset (default wikitext2 when AWQ on)")
+    p.add_argument("--vocoder", default=DEFAULT_SPEECHT5_VOCODER,
+                   help="tts (SpeechT5) only: HiFi-GAN vocoder model id "
+                        f"(default {DEFAULT_SPEECHT5_VOCODER})")
     p.add_argument("--trust-remote-code", action="store_true",
                    help="Allow custom modeling code from the HF repo")
 
     def _set_output(args):
+        if args.weight_format is None:
+            # TTS models are small and quantization-sensitive: keep fp16 default
+            args.weight_format = "fp16" if args.kind == "tts" else "int4"
         if args.output is None:
             base = args.model.rstrip("/").split("/")[-1]
             args.output = f"./{base}-{args.weight_format}"

@@ -6,6 +6,7 @@ A multi-purpose inference CLI built on [OpenVINO GenAI](https://github.com/openv
 - **OpenAI-compatible API server**: expose a converted LLM behind `POST /v1/chat/completions` (incl. SSE streaming), `POST /v1/completions` and `GET /v1/models`
 - **Browser WebUI**: pick any converted model, load it on a device and chat / generate images from the browser (`ovtool webui`)
 - **Multimodal (VLM) inference**: image + text Q&A (converted LLaVA / Qwen-VL / MiniCPM-V / InternVL models)
+- **Text-to-speech (TTS)**: SpeechT5 and Kokoro-82M synthesis to WAV, with speaker/voice selection, language and speed controls
 - **Image generation**: Text2Image and Image2Image with the SD / SDXL / Flux families
 - **Device selection & runtime options**: CPU / GPU / NPU / AUTO / HETERO, with pass-through OpenVINO runtime properties
 - **Model conversion & quantization**: one-command export of Hugging Face models to OpenVINO IR with INT8 / INT4 weight compression (AWQ supported)
@@ -80,6 +81,7 @@ Lists available OpenVINO devices with full device names, driver versions, and su
 | `llm` | Text LLMs | `text-generation-with-past` |
 | `vlm` | Vision-language models | `image-text-to-text` |
 | `image` | Diffusion image generation | Auto-selected per model (SD / SDXL / Flux / LCM) |
+| `tts` | Text-to-speech (SpeechT5 / Kokoro) | `text-to-audio` (defaults to fp16 — small, quantization-sensitive models) |
 
 Common options:
 
@@ -95,7 +97,15 @@ Examples:
 ```bash
 ovtool convert vlm openbmb/MiniCPM-V-2_6 -m ./minicpmv-int4 --sym
 ovtool convert image stabilityai/sd-turbo -m ./sd-turbo-ir --weight-format int8
+ovtool convert tts microsoft/speecht5_tts -o ./speecht5-fp16
+ovtool convert tts hexgrad/Kokoro-82M --trust-remote-code -o ./kokoro
 ```
+
+TTS notes: the SpeechT5 export automatically pulls the `speecht5_hifigan`
+vocoder (override with `--vocoder`); Kokoro needs `pip install kokoro` at
+export time (it also fetches misaki G2P data, incl. a spacy model, from the
+network) plus `--trust-remote-code`, and copies its 54 `voices/*.bin` packs
+into the output directory.
 
 ### `ovtool download`
 
@@ -201,6 +211,28 @@ ovtool vlm -m ./minicpmv-int4 -d GPU -i ./photo.jpg "Describe the contents of th
 
 `-i` may be repeated to pass multiple images; generation parameters are the same as for LLMs.
 
+### `ovtool tts` (Text-to-Speech)
+
+```bash
+# SpeechT5: English TTS with the built-in default speaker (cmu-arctic x-vector)
+ovtool tts -m ./speecht5-fp16 -d CPU "Describe OpenVINO in one sentence" --out ./out.wav
+
+# Kokoro: pick a voice from the model's voices/ pack (54 available)
+ovtool tts -m ./kokoro --speaker af_heart --language en-us --speed 1.0 "Hello!"
+```
+
+Options: `--speaker <voice>` (Kokoro voice name, e.g. `af_heart` / `am_michael`;
+default: first pack, all names listed on first run), `--speaker-embedding FILE`
+(explicit `.bin` override — for SpeechT5 a 512-float x-vector), `--language`
+(Kokoro G2P: `en-us` / `en-gb` end-to-end; `es` / `fr-fr` / `hi` / `it` / `pt-br`
+require espeak-ng), `--speed` (Kokoro), `--minlenratio` / `--maxlenratio` /
+`--threshold` (SpeechT5 stop-behavior), `--stats`, `--out FILE` / `--out-dir`.
+Backend-specific parameters passed to the wrong backend are ignored with a
+warning. Output is 16-bit PCM mono WAV at the model's native rate
+(SpeechT5 16 kHz, Kokoro 24 kHz). **CPU is considerably faster than GPU here**
+(verified ~10x: these are small autoregressive models where per-step iGPU
+overhead dominates). NPU is rejected by the registry (not supported upstream).
+
 ### `ovtool image` / `ovtool image2image` (Diffusion)
 
 ```bash
@@ -248,6 +280,7 @@ ovtool/
 ├── server.py     # OpenAI-compatible API server (serve)
 ├── webui.py/.html# Browser UI (webui)
 ├── vlm.py        # VLMPipeline: image-text multimodal
+├── tts.py        # Text2SpeechPipeline: SpeechT5 / Kokoro speech synthesis
 └── imagegen.py   # Text2Image / Image2Image
 ```
 
@@ -265,6 +298,8 @@ ovtool/
 - **NPU inference (Qwen3-0.6B symmetric INT4)**: ✅ TTFT ~1.5s, ~21 tok/s; `--max-prompt-len` / `--min-response-len` static-shape options verified
 - **Qwen3.5-0.8B / Qwen3.5-2B** (new native multimodal `qwen3_5` architecture, sym/asym INT4): ✅ text generation OK on GPU (2B ~33 tok/s; 0.8B NPU compile extremely slow)
 - **Qwen3-VL-2B-Instruct INT4**: ✅ text generation OK
+- **TTS — SpeechT5** (`microsoft/speecht5_tts`, fp16 encoder/decoder/postnet/vocoder + tokenizer IR): ✅ CPU 4.1s of 16 kHz speech in 2.3s (~28.8k samples/s); GPU works but ~10x slower; default speaker embedding built into GenAI
+- **TTS — Kokoro-82M** (fp16 single IR + 54 voice packs): ✅ CPU 4.7s of 24 kHz speech in 2.7s with `--speaker af_heart --language en-us`; default-voice fallback, bad-voice listing and wrong-backend param warnings verified
 - The `vlm` multimodal path is implemented per the official openvino-genai API; image+text inference was not verified end-to-end (see known limitations)
 
 ## Known Limitations (measured 2026-09)
@@ -273,6 +308,7 @@ ovtool/
 2. **VLM on NPU**: text mode of Qwen3.5-0.8B triggered `ZE_RESULT_ERROR_DEVICE_LOST` (driver hang, requires process restart) after a long compile on NPU. Recommend running only symmetric-INT4 pure LLMs on NPU (verified with qwen3-0.6b-sym).
 3. **FLUX.2-klein export**: fixed by optimum-intel 2.2.0 (FLUX.2 support PR #1809 + dynamic-sequence fix #1846; the old 2.1.0 `pos_embed` tracing failure is gone). FLUX.2-klein-4B converts and generates on iGPU (1024px/8 steps ~2m06s int8 / ~2m13s int4-g64). Note the conversion env pairing: optimum-intel 2.2.0 + diffusers 0.39 (0.40 pulls an LTX2→Gemma4Unified import chain that needs unreleased transformers) + transformers 5.5.4; transformers 5.3+ drops qwen3_5 re-conversion (`pip install transformers==5.2.0` to restore — already-converted models are unaffected).
 4. **optimum version guards**: optimum-intel 2.1.0 pins stale `MAX_TRANSFORMERS_VERSION` values on newer architectures such as qwen3-vl/qwen2-vl; `convert vlm` relaxes them automatically (`_relax_stale_version_guards`). qwen3_5 additionally requires transformers==5.2.x (5.3+ removed `Qwen3_5DynamicCache`, while optimum pins `<5.6`; 5.2 satisfies both).
+5. **TTS scope of the current GenAI release** (2026.3.1): only SpeechT5 and Kokoro-82M are supported by `Text2SpeechPipeline` — **Qwen3-TTS is not** (community OpenVINO conversions exist on HF but do not run through GenAI). Kokoro zh/ja voices ship in the pack but are not supported end-to-end (G2P); non-English languages (es/fr-fr/hi/it/pt-br) require espeak-ng installed.
 
 ## Implementation Notes (lessons learned)
 
@@ -281,4 +317,7 @@ ovtool/
 - **CLIP-style slow tokenizers** require `sentencepiece` / `tiktoken` to convert (added as dependencies).
 - The `rng_seed` generation parameter and the `ov.Tensor(N,H,W,C)` image result are adapted to the openvino-genai 2026.3 API.
 - optimum-intel 2.1.0 does not save the converted tokenizer with `save_pretrained`, so `convert` converts and saves it via openvino-tokenizers itself.
+- **optimum-intel drops `model_kwargs` on the Python export path** (`from_pretrained(export=True)` → `_export` → `main_export` forwards no kwargs), which the SpeechT5 exporter requires for the vocoder — `convert tts` therefore calls `optimum.exporters.openvino.main_export` directly, with the library inferred per model (`transformers` vs optimum-intel's `kokoro` detection, without which the model_type-less Kokoro config crashes `AutoConfig`).
+- **In-place fp16 re-serialization fails on Windows**: `core.read_model()` keeps the original `.bin` memory-mapped, so `ov.serialize` cannot reopen the same path — serialize to a sibling `.fp16.*` file, release the model, then `os.replace` over the original.
+- **GPU TTS results are remote tensors**: `Tensor.data` raises `Not Implemented` on GPU outputs; `tts.py` copies to a host `ov.Tensor` via `copy_to` first (CPU tensors read directly).
 - **Broken `tokenizer.json` serialization for tiktoken-backed tokenizers**: under transformers 5.x, `save_pretrained` on tokenizers of newer models such as Qwen3 writes a `tokenizer.json` that encodes to empty results via the tokenizers library (silently broken). `_save_tokenizer` now loads the tokenizer from the original HF repo first and probes each candidate with a non-empty encoding check.

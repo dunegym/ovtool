@@ -325,6 +325,31 @@ models:
         convert: "ovtool convert image black-forest-labs/FLUX.2-klein-4B -o ./flux2k-int4 --weight-format int4 --group-size 64"
         note: 1024px/8 steps ~2m13s on iGPU
 
+  - id: microsoft/speecht5_tts
+    kind: tts
+    match: ["speecht5"]
+    variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert tts microsoft/speecht5_tts -o ./speecht5-fp16"
+        note: English TTS; vocoder (speecht5_hifigan) exported automatically; default speaker embedding is built into openvino-genai (7306-th cmu-arctic x-vector) — pass --speaker-embedding to override
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert tts microsoft/speecht5_tts -o ./speecht5-int8 --weight-format int8"
+        note: vocoder may degrade under int8; prefer fp16 for quality
+      fp32:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert tts microsoft/speecht5_tts -o ./speecht5-fp32 --weight-format fp32"
+
+  - id: hexgrad/Kokoro-82M
+    kind: tts
+    match: ["kokoro-82m", "kokoro"]
+    variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert tts hexgrad/Kokoro-82M --trust-remote-code -o ./kokoro-fp16"
+        note: export needs 'pip install kokoro' + --trust-remote-code; pick a voice with --speaker <name> from voices/*.bin (e.g. af_heart); languages en-us/en-gb end-to-end, es/fr-fr/hi/it/pt-br need espeak-ng, zh/ja not yet supported
+
 # global rules, evaluated for every matched entry
 global_rules:
   - when_device: NPU
@@ -338,6 +363,11 @@ global_rules:
     message: >-
       VLM pipelines on NPU hung the driver in testing
       (ZE_RESULT_ERROR_DEVICE_LOST); run VLMs on CPU/GPU.
+  - when_device: NPU
+    forbid_kind: tts
+    message: >-
+      TTS pipelines on NPU are not documented as supported by openvino-genai;
+      run TTS on CPU or GPU.
   - when_device: NPU
     require_quant: int4-sym-g128
     for_kinds: [llm]

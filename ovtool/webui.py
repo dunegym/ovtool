@@ -143,6 +143,8 @@ def scan_models(models_dir: str) -> list[dict]:
     groups: list[dict] = []
     for root in all_roots(models_dir):
         for g in find_local_models([root]):
+            if g["kind"] not in KIND_DIRS:
+                continue  # e.g. tts models: no web UI pipeline yet (ovtool tts)
             variants = [v for v in g["variants"] if v["path"] not in seen]
             seen.update(v["path"] for v in variants)
             if not variants:
