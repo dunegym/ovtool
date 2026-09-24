@@ -258,13 +258,23 @@ ovtool rerank -m ./bge-reranker "what is OpenVINO?" \
 ```
 
 `embed` options: `--query` (query-side embedding; with document texts it
-becomes cosine ranking), `--pooling cls|mean` (default: auto from the copied
-`1_Pooling/config.json`, else mean — GenAI does not auto-detect pooling),
-`--no-normalize`, `--query-instruction` / `--embed-instruction` (bge / e5
-style prefixes), `--max-length`, `--batch-size`, `--json [--out FILE]`.
-`rerank` options: `--top-n`, `--json`. Both take `-d device` and `--opt`.
-BGE models work best with the query instruction above; E5 models use
-`--query-instruction "query: "` / `--embed-instruction "passage: "`.
+becomes cosine ranking), `--pooling cls|mean|last_token` (default: auto from
+the copied `1_Pooling/config.json`, else mean — GenAI does not auto-detect
+pooling), `--no-normalize`, `--query-instruction` / `--embed-instruction`
+(bge / e5 style prefixes), `--max-length`, `--batch-size`, `--json [--out FILE]`.
+`rerank` options: `--top-n`, `--instruction` (Qwen3 reranking task),
+`--json`. Both take `-d device` and `--opt`. BGE models work best with the
+query instruction above; E5 models use `--query-instruction "query: "` /
+`--embed-instruction "passage: "`.
+
+**Qwen3 retrieval models**: `Qwen3-Embedding` converts via `convert embed`
+(feature-extraction) — `ovtool embed` auto-applies its LAST_TOKEN pooling and
+the official query instruction. `Qwen3-Reranker` converts via `convert llm`
+(text-generation-with-past — the LLM export path, not `convert rerank`);
+`ovtool rerank` detects the qwen3 model type and wraps query/documents in the
+official yes/no instruction template automatically (GenAI feeds them to the
+model verbatim, so without the template the scores are near-random).
+`--instruction` customizes the reranking task text.
 
 ### `ovtool image` / `ovtool image2image` (Diffusion)
 
@@ -336,6 +346,8 @@ ovtool/
 - **TTS — Kokoro-82M** (fp16 single IR + 54 voice packs): ✅ CPU 4.7s of 24 kHz speech in 2.7s with `--speaker af_heart --language en-us`; default-voice fallback, bad-voice listing and wrong-backend param warnings verified
 - **Embeddings — bge-small-en-v1.5** (fp16, 384-dim): ✅ CLS pooling auto-applied from the copied `1_Pooling` config; cosine retrieval ranking semantically correct on CPU/GPU; JSON vector dump verified
 - **Rerank — bge-reranker-v2-m3** (fp16, 568M multilingual): ✅ sigmoid scores rank a relevant English doc 0.9999 / Chinese doc 0.80 / irrelevant 0.0000 for an English query; `--top-n` verified on CPU
+- **Qwen3-Embedding-0.6B** (fp16 via `convert embed`, 1024-dim): ✅ LAST_TOKEN pooling + official query instruction auto-applied; cosine ranking correct across en+zh (relevant 0.81–0.83 vs irrelevant 0.23)
+- **Qwen3-Reranker-0.6B** (int4 via `convert llm`): ✅ official yes/no template auto-applied — P(yes) 0.986/0.969 for relevant en/zh docs vs 0.010 irrelevant (raw query+doc without the template scores near-random; never bypass it)
 - The `vlm` multimodal path is implemented per the official openvino-genai API; image+text inference was not verified end-to-end (see known limitations)
 
 ## Known Limitations (measured 2026-09)

@@ -235,6 +235,14 @@ def detect_kind(model_dir: Path) -> str | None:
             return "rerank"  # cross-encoder reranker export
         if arch and all(a.endswith("Model") for a in arch):
             return "embed"  # plain backbone export (BertModel / XLMRobertaModel ...)
+        # Qwen3-Embedding / Qwen3-Reranker export as Qwen3ForCausalLM (same IR
+        # layout as an LLM); tell them apart from the catalog path convention
+        # <root>/<kind>/<model>/<variant> (kind dir or model name hints)
+        hints = " ".join((model_dir.parent.name, model_dir.parent.parent.name)).lower()
+        if "embed" in hints:
+            return "embed"
+        if "rerank" in hints:
+            return "rerank"
         return "llm"
     return None
 

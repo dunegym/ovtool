@@ -375,6 +375,30 @@ models:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert rerank BAAI/bge-reranker-v2-m3 -o ./bge-reranker-int8 --weight-format int8"
 
+  - id: Qwen/Qwen3-Embedding-0.6B
+    kind: embed
+    match: ["qwen3-embedding"]
+    variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed Qwen/Qwen3-Embedding-0.6B -o ./qwen3-emb-0.6b-fp16"
+        note: 1024-dim multilingual (top MTEB multilingual), decoder-based — LAST_TOKEN pooling and the official query instruction are auto-applied by 'ovtool embed'; 4B / 8B siblings convert the same way
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed Qwen/Qwen3-Embedding-0.6B -o ./qwen3-emb-0.6b-int8 --weight-format int8"
+
+  - id: Qwen/Qwen3-Reranker-0.6B
+    kind: rerank
+    match: ["qwen3-reranker"]
+    variants:
+      int4-asym-g128:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm Qwen/Qwen3-Reranker-0.6B -o ./qwen3-rer-0.6b-int4"
+        note: converts via 'convert llm' (text-generation-with-past), NOT 'convert rerank'; 'ovtool rerank' detects the qwen3 model_type and applies the official yes/no instruction template automatically; scores are P(yes) — verified 0.99/0.97 relevant vs 0.01 irrelevant; 4B / 8B siblings convert the same way
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm Qwen/Qwen3-Reranker-0.6B -o ./qwen3-rer-0.6b-int8 --weight-format int8"
+
 # global rules, evaluated for every matched entry
 global_rules:
   - when_device: NPU
