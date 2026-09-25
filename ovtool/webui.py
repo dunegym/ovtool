@@ -9,19 +9,38 @@ plus a small JSON API:
   GET  /api/status           currently loaded model / load progress
   POST /api/load             load a model (kind llm|vlm|image) on a device
   POST /api/unload           release the loaded pipeline
-  POST /api/chat             chat completion (SSE stream or JSON)
+  POST /api/chat             chat completion (SSE stream or JSON), optionally
+                             grounded in a knowledge base ("rag" options)
   POST /api/image            text-to-image generation (base64 PNG results)
 
-One pipeline is loaded at a time (loading happens in a background thread;
-the UI polls /api/status). Chat requests render the model's chat template
-per request (stateless), reusing the serve implementation. Image models may
-be loaded in segmented mode ("TE,DENOISE,VAE") which fixes static geometry,
-mirroring `ovtool image --devices`.
+  GET  /api/kb               knowledge bases with their documents
+  POST /api/kb               create one (name, embedding model, chunking)
+  DELETE /api/kb             delete one
+  DELETE /api/kb/doc         remove a document
+  POST /api/kb/ingest        queue uploads / pasted text / a local path
+  GET  /api/kb/ingest        ingestion progress
+  POST /api/kb/ingest/cancel drop queued documents, stop the current one
+  POST /api/kb/search        retrieval preview with every candidate's scores
+  GET  /api/retrieval        resident embedding / reranking models
+  POST /api/retrieval/unload release them
+
+One chat/image pipeline is loaded at a time (loading happens in a background
+thread; the UI polls /api/status). Chat requests render the model's chat
+template per request (stateless), reusing the serve implementation. Image
+models may be loaded in segmented mode ("TE,DENOISE,VAE") which fixes static
+geometry, mirroring `ovtool image --devices`.
+
+Retrieval-augmented chat (see rag.py) keeps its embedding and reranking
+pipelines resident beside the chat model, loaded on first use: the last user
+turn is embedded, matched against the knowledge base, reranked, and the top
+passages are spliced into that turn with numbered citations; the streamed
+reply is preceded by the passages it was given.
 """
 from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import gc
 import io
 import json
@@ -34,13 +53,17 @@ from pathlib import Path
 import openvino_genai as ovgenai
 import openvino_tokenizers  # noqa: F401  (registers custom-op extension)
 
+from . import rag
 from .devices import list_devices
 from .registry import check as registry_check, extra_model_roots, find_local_models
-from .server import DEFAULT_MAX_TOKENS, _finish_reason, _usage, build_config, render_chat
+from .server import (DEFAULT_MAX_TOKENS, _content_to_text, _finish_reason, _set, _usage,
+                     build_config, render_chat)
 
 WEBUI_HTML = Path(__file__).parent / "webui.html"
-KIND_DIRS = ("llm", "vlm", "image")
+KIND_DIRS = ("llm", "vlm", "image")        # loadable into the chat/image slot
+CATALOG_KINDS = KIND_DIRS + ("embed", "rerank")  # + retrieval models (Knowledge tab)
 GENERATION_LOCK_TIMEOUT = 1800  # refuse queued generation after 30 min
+MAX_BODY_BYTES = 256 << 20  # document uploads arrive base64-encoded
 
 # extra model roots added at runtime through the UI; when the
 # persist_roots setting is on they are saved to SETTINGS_PATH and
@@ -143,7 +166,7 @@ def scan_models(models_dir: str) -> list[dict]:
     groups: list[dict] = []
     for root in all_roots(models_dir):
         for g in find_local_models([root]):
-            if g["kind"] not in KIND_DIRS:
+            if g["kind"] not in CATALOG_KINDS:
                 continue  # e.g. tts models: no web UI pipeline yet (ovtool tts)
             variants = [v for v in g["variants"] if v["path"] not in seen]
             seen.update(v["path"] for v in variants)
@@ -226,9 +249,14 @@ def _load_model(spec: dict) -> None:
                 SLOT.geometry = {k: geo_args.__dict__[k] for k in
                                  ("num_images", "width", "height", "guidance_scale")}
         else:
-            pipe = ovgenai.LLMPipeline(spec["path"], device=spec["device"]) \
+            # NPU static prompt budget matches `ovtool chat` (16384). VLM's
+            # CLI default is 1024, which four RAG passages overflow.
+            from .llm import open_llm_pipeline
+            from .vlm import open_vlm_pipeline
+            pipe = open_llm_pipeline(spec["path"], spec["device"]) \
                 if spec["kind"] == "llm" else \
-                ovgenai.VLMPipeline(spec["path"], device=spec["device"])
+                open_vlm_pipeline(spec["path"], spec["device"],
+                                  npu_prompt_len=16384)
             SLOT.device = spec["device"]
 
         SLOT.pipe = pipe
@@ -256,6 +284,10 @@ class Handler(BaseHTTPRequestHandler):
 
     models_dir: str = "./models"
     settings: dict = dict(DEFAULT_SETTINGS)
+    # knowledge bases + resident retrieval models (set by run_webui)
+    kb: rag.KBStore
+    retriever: rag.Retriever
+    ingestor: rag.Ingestor
 
     def _persist_now(self) -> None:
         """Write the settings file when persistence is on; drop it otherwise.
@@ -288,8 +320,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_BODY_BYTES:
+            self.close_connection = True  # the unread body cannot be skipped
+            raise _ApiError(413, f"request body over {MAX_BODY_BYTES >> 20} MB")
         try:
-            length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length)) if length else {}
             return body if isinstance(body, dict) else {}
         except json.JSONDecodeError as e:
@@ -322,6 +357,16 @@ class Handler(BaseHTTPRequestHandler):
             pass
         self.close_connection = True
 
+    def _internal_error(self, e: Exception) -> None:
+        """Answer an unexpected failure with a JSON 500 instead of dropping
+        the socket (streaming routes report errors in-band themselves)."""
+        self.log_error("%s %s failed: %r", self.command, self.path, e)
+        self.close_connection = True
+        try:
+            self._json(500, {"error": f"{type(e).__name__}: {e}"})
+        except OSError:
+            pass
+
     # ---------------- routing ---------------- #
 
     def do_GET(self):
@@ -352,12 +397,22 @@ class Handler(BaseHTTPRequestHandler):
                                  if k not in ("roots", "persist_roots")})
             elif path == "/api/download":
                 self._json(200, DOWNLOAD)
+            elif path == "/api/kb":
+                self._json(200, self.kb.list())
+            elif path == "/api/kb/ingest":
+                self._json(200, self.ingestor.status())
+            elif path == "/api/retrieval":
+                self._json(200, self.retriever.describe())
             else:
                 raise _ApiError(404, f"unknown path: {path}")
         except _ApiError as e:
             self._json(e.status, {"error": e.message})
+        except rag.KBError as e:
+            self._json(e.status, {"error": str(e)})
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
             self.close_connection = True
+        except Exception as e:  # noqa: BLE001
+            self._internal_error(e)
 
     def do_POST(self):
         try:
@@ -377,21 +432,48 @@ class Handler(BaseHTTPRequestHandler):
                 self._update_settings(body)
             elif path == "/api/download":
                 self._start_download(body)
+            elif path == "/api/kb":
+                self._kb_create(body)
+            elif path == "/api/kb/ingest":
+                self._kb_ingest(body)
+            elif path == "/api/kb/ingest/cancel":
+                self._json(200, {"dropped": self.ingestor.cancel()})
+            elif path == "/api/kb/search":
+                self._kb_search(body)
+            elif path == "/api/retrieval/unload":
+                self.retriever.unload()
+                self._json(200, {"unloaded": True})
             else:
                 raise _ApiError(404, f"unknown path: {path}")
         except _ApiError as e:
             self._json(e.status, {"error": e.message})
+        except rag.KBError as e:
+            self._json(e.status, {"error": str(e)})
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
             self.close_connection = True
+        except Exception as e:  # noqa: BLE001
+            self._internal_error(e)
 
     def do_DELETE(self):
         try:
-            if self.path.split("?")[0] == "/api/roots":
+            path = self.path.split("?")[0]
+            if path == "/api/roots":
                 self._remove_root(self._read_json())
+            elif path == "/api/kb":
+                self.kb.delete(str(self._read_json().get("id") or ""))
+                self._json(200, {"deleted": True})
+            elif path == "/api/kb/doc":
+                body = self._read_json()
+                self.kb.delete_document(str(body.get("kb") or ""), str(body.get("doc") or ""))
+                self._json(200, {"deleted": True})
             else:
                 raise _ApiError(404, f"unknown path: {self.path}")
         except _ApiError as e:
             self._json(e.status, {"error": e.message})
+        except rag.KBError as e:
+            self._json(e.status, {"error": str(e)})
+        except Exception as e:  # noqa: BLE001
+            self._internal_error(e)
 
     # ---------------- settings ---------------- #
 
@@ -554,6 +636,7 @@ class Handler(BaseHTTPRequestHandler):
         messages = body.get("messages")
         if not isinstance(messages, list) or not messages:
             raise _ApiError(400, "messages required")
+        rag_opts = self._rag_options(body.get("rag"))
         images = None
         if body.get("images"):
             if SLOT.kind != "vlm":
@@ -570,51 +653,189 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     raise _ApiError(400, f"bad image payload: {e}")
 
-        if SLOT.tokenizer is not None:
-            prompt = render_chat(SLOT.tokenizer, messages)
-        else:  # pragma: no cover - tokenizers always expose get_tokenizer today
-            prompt = "\n".join(f"{m.get('role')}: {m.get('content')}" for m in messages)
         cfg = build_config({**body.get("params", {}),
                             "max_tokens": (body.get("params") or {}).get(
                                 "max_tokens", DEFAULT_MAX_TOKENS)})
+        think = body.get("think", True) is not False
+        if images is None:
+            # _prompt() already rendered the template (and enable_thinking);
+            # GenAI wrapping that string again would hide the variable.
+            _set(cfg, "apply_chat_template", False)
 
         stream = bool(body.get("stream", True))
         gen_kwargs = dict(generation_config=cfg)
         if images is not None:
             gen_kwargs["images"] = images
-        # LLMPipeline: list input returns DecodedResults (perf metrics);
-        # VLMPipeline takes the prompt string directly and returns metrics
-        prompt_arg = prompt if SLOT.kind == "vlm" else [prompt]
 
         if not stream:
-            with SLOT.gen_lock:
-                result = SLOT.pipe.generate(prompt_arg, **gen_kwargs)
+            rag_info = None
+            if rag_opts:
+                messages, rag_info = self._retrieve(messages, rag_opts)
+            try:
+                with SLOT.gen_lock:
+                    result = SLOT.pipe.generate(
+                        self._prompt(messages, think, with_images=bool(images)),
+                        **gen_kwargs)
+            except Exception as e:  # noqa: BLE001 - e.g. prompt over the NPU budget
+                raise _ApiError(500, f"generation failed: {e}")
             text = result.texts[0] if hasattr(result, "texts") else str(result)
             usage = _usage(getattr(result, "perf_metrics", None))
             self._json(200, {"content": text, "usage": usage,
-                             "finish_reason": _finish_reason(result, cfg)})
+                             "finish_reason": _finish_reason(result, cfg),
+                             "rag": rag_info})
             return
 
         rid = "chat-" + uuid.uuid4().hex[:12]
         self._sse_start()
         alive = True
-        with SLOT.gen_lock:
+        try:
+            if rag_opts:
+                # retrieval progress precedes the reply (a first query may
+                # load the embedder / reranker), then the passages used
+                alive = self._sse({"id": rid, "stage": "retrieve"})
+                messages, rag_info = self._retrieve(
+                    messages, rag_opts,
+                    on_stage=lambda s, d=None: self._sse({"id": rid, "stage": s,
+                                                          "detail": d}))
+                alive = self._sse({"id": rid, "rag": rag_info})
+            if alive:
+                prompt_arg = self._prompt(messages, think, with_images=bool(images))
+                with SLOT.gen_lock:
 
-            def on_subword(subword):
-                nonlocal alive
-                if not isinstance(subword, str):
-                    subword = str(subword)
-                alive = self._sse({"id": rid, "delta": subword})
-                return not alive  # stop generation on dead socket
+                    def on_subword(subword):
+                        nonlocal alive
+                        if not isinstance(subword, str):
+                            subword = str(subword)
+                        alive = self._sse({"id": rid, "delta": subword})
+                        return not alive  # stop generation on dead socket
 
-            gen_kwargs["streamer"] = on_subword
-            result = SLOT.pipe.generate(prompt_arg, **gen_kwargs)
-        if alive:
-            usage = _usage(getattr(result, "perf_metrics", None))
-            self._sse({"id": rid, "usage": usage,
-                       "finish_reason": _finish_reason(result, cfg)})
-            self._sse(None)
+                    gen_kwargs["streamer"] = on_subword
+                    result = SLOT.pipe.generate(prompt_arg, **gen_kwargs)
+            if alive:
+                usage = _usage(getattr(result, "perf_metrics", None))
+                self._sse({"id": rid, "usage": usage,
+                           "finish_reason": _finish_reason(result, cfg)})
+                self._sse(None)
+        except Exception as e:  # noqa: BLE001 - headers are out; report in-band
+            self.log_error("chat failed: %r", e)
+            if self._sse({"id": rid, "error": str(e)}):
+                self._sse(None)
         self._sse_end()
+
+    @staticmethod
+    def _prompt(messages: list, think: bool = True, *, with_images: bool = False):
+        extra = None if think else {"enable_thinking": False}
+        if with_images:
+            # VLMPipeline places image tokens while it applies the template;
+            # ChatHistory carries enable_thinking as extra_context.
+            history = [{"role": m.get("role", "user"),
+                        "content": _content_to_text(m.get("content"))}
+                       for m in messages]
+            chat = ovgenai.ChatHistory(history)
+            if extra:
+                chat.set_extra_context(extra)
+            return chat
+        if SLOT.tokenizer is not None:
+            prompt = render_chat(SLOT.tokenizer, messages, extra)
+        else:  # pragma: no cover - tokenizers always expose get_tokenizer today
+            prompt = "\n".join(f"{m.get('role')}: {m.get('content')}" for m in messages)
+        # LLMPipeline: list input returns DecodedResults (perf metrics);
+        # VLMPipeline takes the prompt string directly and returns metrics
+        return prompt if SLOT.kind == "vlm" else [prompt]
+
+    # ---------------- knowledge bases (RAG) ---------------- #
+
+    def _rag_options(self, raw) -> dict | None:
+        """Validated retrieval options of a chat/search request (None = off)."""
+        if not isinstance(raw, dict) or not raw.get("kb"):
+            return None
+        try:
+            opts = {"kb": str(raw["kb"]),
+                    "top_k": int(raw.get("top_k") or 20),
+                    "top_n": int(raw.get("top_n") or 4),
+                    "min_score": float(raw.get("min_score") or 0.0),
+                    "reranker": str(raw["reranker"]) if raw.get("reranker") else None,
+                    "embed_device": str(raw.get("embed_device") or "CPU").strip().upper(),
+                    "rerank_device": str(raw.get("rerank_device") or "CPU").strip().upper()}
+        except (TypeError, ValueError):
+            raise _ApiError(400, "invalid retrieval options")
+        if not 1 <= opts["top_n"] <= 20:
+            raise _ApiError(400, "top_n (passages) must be 1-20")
+        if not opts["top_n"] <= opts["top_k"] <= 200:
+            raise _ApiError(400, "top_k (candidates) must be between top_n and 200")
+        self.kb.get(opts["kb"])  # unknown KB -> 404 before any work
+        return opts
+
+    def _retrieve(self, messages: list, opts: dict, on_stage=None) -> tuple[list, dict]:
+        """Ground the last user turn in the knowledge base: returns the
+        messages with retrieved passages spliced into that turn (unchanged
+        when nothing clears min_score) and the retrieval summary for the UI."""
+        last = next((i for i in range(len(messages) - 1, -1, -1)
+                     if isinstance(messages[i], dict) and messages[i].get("role") == "user"),
+                    None)
+        if last is None:
+            raise _ApiError(400, "retrieval needs a user message")
+        question = _content_to_text(messages[last].get("content")).strip()
+        res = rag.search(self.kb, self.retriever, opts["kb"], rag.retrieval_query(question),
+                         top_k=opts["top_k"], top_n=opts["top_n"],
+                         min_score=opts["min_score"], reranker=opts["reranker"],
+                         embed_device=opts["embed_device"],
+                         rerank_device=opts["rerank_device"], on_stage=on_stage)
+        if res["hits"]:
+            messages = list(messages)
+            messages[last] = {**messages[last],
+                              "content": rag.augment(question, res["hits"], res["kb"]["name"])}
+        # the candidate list is for the Knowledge tab's retrieval preview
+        return messages, {k: v for k, v in res.items() if k != "candidates"}
+
+    def _kb_create(self, body: dict) -> None:
+        try:
+            size = int(body.get("chunk_size") or rag.DEFAULT_CHUNK_SIZE)
+            overlap = int(body.get("chunk_overlap") if body.get("chunk_overlap") is not None
+                          else rag.DEFAULT_CHUNK_OVERLAP)
+        except (TypeError, ValueError):
+            raise _ApiError(400, "chunk_size / chunk_overlap must be integers")
+        self._json(200, self.kb.create(str(body.get("name") or ""),
+                                       str(body.get("embedder") or ""), size, overlap))
+
+    def _kb_ingest(self, body: dict) -> None:
+        items: list[dict] = []
+        for f in body.get("files") or []:
+            if not isinstance(f, dict):
+                raise _ApiError(400, "files must be {name, data | text} objects")
+            name = str(f.get("name") or "").strip()
+            if not name:
+                raise _ApiError(400, "every file needs a name")
+            if "text" in f:  # pasted text
+                items.append({"name": name, "text": str(f["text"]), "source": "paste"})
+                continue
+            try:
+                data = base64.b64decode(f.get("data") or "")
+            except (binascii.Error, ValueError) as e:
+                raise _ApiError(400, f"bad base64 data for {name}: {e}")
+            if len(data) > rag.MAX_FILE_BYTES:
+                raise _ApiError(413, f"{name} is larger than {rag.MAX_FILE_BYTES >> 20} MB")
+            items.append({"name": name, "data": data, "source": "upload"})
+        if body.get("path"):
+            items += rag.collect_files(str(body["path"]).strip().strip('"'))
+        if not items:
+            raise _ApiError(400, "nothing to ingest: send files, text or a path")
+        device = str(body.get("embed_device") or "CPU").strip().upper()
+        self._json(200, {"queued": self.ingestor.submit(str(body.get("kb") or ""),
+                                                         items, device)})
+
+    def _kb_search(self, body: dict) -> None:
+        opts = self._rag_options(body)
+        if opts is None:
+            raise _ApiError(400, "kb required")
+        query = str(body.get("query") or "").strip()
+        if not query:
+            raise _ApiError(400, "query required")
+        self._json(200, rag.search(self.kb, self.retriever, opts["kb"], query,
+                                   top_k=opts["top_k"], top_n=opts["top_n"],
+                                   min_score=opts["min_score"], reranker=opts["reranker"],
+                                   embed_device=opts["embed_device"],
+                                   rerank_device=opts["rerank_device"]))
 
     def _image(self, body: dict) -> None:
         if SLOT.loading:
@@ -675,9 +896,13 @@ def run_webui(args: argparse.Namespace) -> None:
         for r in stored.get("roots", []):
             if Path(r).is_dir() and r not in SESSION_ROOTS:
                 SESSION_ROOTS.append(r)
+    Handler.kb = rag.KBStore(args.kb_dir)
+    Handler.retriever = rag.Retriever()
+    Handler.ingestor = rag.Ingestor(Handler.kb, Handler.retriever)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}"
     print(f"[ovtool] webui at {url}  (models dir: {args.models_dir})")
+    print(f"[ovtool] knowledge bases: {Path(args.kb_dir).resolve()}")
     print("[ovtool] press Ctrl+C to stop")
     try:
         httpd.serve_forever()
@@ -686,14 +911,18 @@ def run_webui(args: argparse.Namespace) -> None:
 
 
 def add_parser(sub: argparse._SubParsersAction) -> None:
-    p = sub.add_parser("webui", help="Browser UI for chat & image generation",
+    p = sub.add_parser("webui", help="Browser UI for chat, knowledge-base RAG & image generation",
                        description="Start a local web UI: pick a converted model, "
                                    "load it on a device, chat (streaming) and generate "
-                                   "images. One model is loaded at a time.\n"
+                                   "images. One chat/image model is loaded at a time; "
+                                   "knowledge bases (embedding + reranking models) "
+                                   "ground chat replies in your documents.\n"
                                    "Example:\n  ovtool webui --port 7860 --models-dir ./models",
                        formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--host", default="127.0.0.1", help="Bind address (default 127.0.0.1)")
     p.add_argument("--port", type=int, default=7860, help="Port (default 7860)")
     p.add_argument("--models-dir", default="./models",
                    help="Directory with <kind>/<model>/<variant>/ layout (default ./models)")
+    p.add_argument("--kb-dir", default=str(rag.DEFAULT_KB_DIR),
+                   help=f"Knowledge base storage (default {rag.DEFAULT_KB_DIR})")
     p.set_defaults(func=run_webui)

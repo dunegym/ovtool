@@ -10,3 +10,4 @@ __pycache__/
 *.log
 generated-webui/
 downloads/
+.playwright-mcp/

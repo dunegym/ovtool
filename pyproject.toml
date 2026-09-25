@@ -16,6 +16,7 @@ dependencies = [
     "huggingface_hub",
     "sentencepiece",
     "tiktoken",
+    "pypdf",
 ]
 
 [project.optional-dependencies]

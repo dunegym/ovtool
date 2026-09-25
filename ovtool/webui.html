@@ -100,7 +100,7 @@
   #seg-box { display: none; }
   #seg-box.show { display: block; }
   .hint { font-size: 11px; color: var(--dim); margin: -4px 0 8px; }
-  #slot-info { font-family: var(--mono); font-size: 11px; color: var(--dim);
+  #slot-info, .slot-box { font-family: var(--mono); font-size: 11px; color: var(--dim);
                border: 1px dashed var(--line); border-radius: 6px; padding: 8px;
                margin-top: 10px; white-space: pre-wrap; word-break: break-all; }
   #slot-error { color: var(--err); margin-top: 8px; font-size: 12px;
@@ -156,6 +156,70 @@
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
   th { color: var(--dim); font-weight: 500; font-size: 12px; }
   code { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  /* knowledge bases */
+  #pane-kb { padding: 0; }
+  #kb-layout { flex: 1; display: flex; min-height: 0; }
+  #kb-side { width: 290px; flex-shrink: 0; padding: 14px; overflow-y: auto;
+             border-right: 1px solid var(--line); }
+  #kb-main { flex: 1; min-width: 0; padding: 14px 18px; overflow-y: auto; }
+  .h { font-size: 12px; text-transform: uppercase; color: var(--dim);
+       letter-spacing: .08em; margin: 4px 0 8px; }
+  .kb-item { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+             margin-bottom: 6px; cursor: pointer; background: var(--panel2); }
+  .kb-item:hover { border-color: var(--dim); }
+  .kb-item.active { border-color: var(--accent); }
+  .muted { font-size: 11px; color: var(--dim); font-family: var(--mono); }
+  details.box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+                margin: 10px 0; }
+  details.box > summary { cursor: pointer; color: var(--dim); font-size: 12.5px;
+                          user-select: none; }
+  details.box[open] > summary { margin-bottom: 8px; }
+  .inline-row { align-items: center; margin-bottom: 8px; }
+  .inline-row input { margin-bottom: 0; height: 34px; }
+  .inline-row button { flex: 0 0 auto; height: 34px; padding: 0 14px; }
+  #kb-title { font-size: 17px; font-weight: 600; margin: 0; word-break: break-all; }
+  #kb-drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 16px;
+             text-align: center; color: var(--dim); cursor: pointer; margin: 12px 0 8px;
+             transition: border-color .15s, background .15s; }
+  #kb-drop:hover, #kb-drop.over { border-color: var(--accent); color: var(--text);
+                                  background: var(--panel2); }
+  #kb-docs td.num, #kb-docs th.num { text-align: right; font-family: var(--mono);
+                                     font-size: 12px; white-space: nowrap; }
+  #kb-docs td:first-child { word-break: break-all; }
+  .prog { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden;
+          margin: 4px 0 8px; }
+  .prog > div { height: 100%; background: var(--accent); transition: width .3s; }
+  .ok { color: var(--ok); } .err { color: var(--err); }
+  .hit { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+         margin-bottom: 8px; background: var(--panel2); cursor: pointer; }
+  .hit.dropped { opacity: .5; }
+  .hit-head { display: flex; gap: 10px; font-size: 12px; color: var(--dim);
+              margin-bottom: 4px; align-items: baseline; }
+  .hit-head b { color: var(--text); font-weight: 600; word-break: break-all; }
+  .score { font-family: var(--mono); color: var(--accent); margin-left: auto;
+           white-space: nowrap; }
+  .hit-text { white-space: pre-wrap; font-size: 12.5px; max-height: 6.2em; overflow: hidden; }
+  .hit.open .hit-text { max-height: none; }
+  /* chat: retrieval stage, reasoning, sources, citations */
+  #chat-params select { width: auto; max-width: 220px; margin: 0; padding: 4px 6px; }
+  .rag-stage { font-size: 12px; color: var(--dim); }
+  .rag-stage:empty { display: none; }
+  details.think { color: var(--dim); font-size: 12.5px; border-left: 2px solid var(--line);
+                  padding-left: 9px; margin-bottom: 6px; }
+  details.think > summary { cursor: pointer; user-select: none; font-style: italic; }
+  details.sources { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line);
+                    font-size: 12px; }
+  details.sources > summary { cursor: pointer; color: var(--dim); user-select: none; }
+  .src { margin-top: 6px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
+         background: var(--panel); transition: border-color .3s; }
+  .src.flash { border-color: var(--accent); }
+  .src-text { white-space: pre-wrap; color: var(--dim); max-height: 8.5em; overflow-y: auto; }
+  a.cite { color: var(--accent); cursor: pointer; font-size: .8em; vertical-align: super;
+           text-decoration: none; padding: 0 1px; }
+  a.cite:hover { text-decoration: underline; }
+  .note { font-size: 11px; color: var(--warn); margin-top: 4px; }
+  .note:empty { display: none; }
+  #btn-send.stop { background: var(--err); }
 </style>
 </head>
 <body>
@@ -237,6 +301,7 @@
   <section style="flex:1; display:flex; flex-direction:column; min-width:0;">
     <div id="tabs">
       <div class="tab active" data-pane="chat" data-i18n="chatTab">Chat</div>
+      <div class="tab" data-pane="kb" data-i18n="kbTab">Knowledge</div>
       <div class="tab" data-pane="image" data-i18n="imageTab">Image</div>
       <div class="tab" data-pane="devices" data-i18n="devicesTab">Devices</div>
     </div>
@@ -244,11 +309,13 @@
       <div class="pane active" id="pane-chat">
         <div id="messages"></div>
         <div id="chat-params">
+          <label>📚 <select id="rag-kb"></select></label>
           <label>max <input id="p-max" type="number" value="512" min="1"></label>
           <label>temp <input id="p-temp" type="number" value="0" min="0" step="0.1"></label>
           <label>top_p <input id="p-topp" type="number" value="" placeholder="1" step="0.05"></label>
           <label>seed <input id="p-seed" type="number" value=""></label>
           <label><input id="p-stream" type="checkbox" checked> <span data-i18n="stream">stream</span></label>
+          <label title="reasoning models (Qwen3, MiniCPM5): off answers directly"><input id="p-think" type="checkbox" checked> <span data-i18n="think">think</span></label>
           <button class="sec" id="btn-clear" style="padding:4px 10px" data-i18n="clear">clear</button>
         </div>
         <div id="chat-form">
@@ -257,6 +324,85 @@
             <input type="file" id="img-attach" accept="image/*" style="display:none">
             <button class="sec" id="btn-attach" style="padding:6px 10px">📷</button>
             <button id="btn-send" data-i18n="send">Send</button>
+          </div>
+        </div>
+      </div>
+      <div class="pane" id="pane-kb">
+        <div id="kb-layout">
+          <div id="kb-side">
+            <div class="h" data-i18n="kbListH">Knowledge bases</div>
+            <div id="kb-list"></div>
+            <details class="box" id="kb-new">
+              <summary data-i18n="kbNewH">+ New knowledge base</summary>
+              <input type="text" id="kb-name" data-i18n-ph="kbNamePh" placeholder="name, e.g. product docs">
+              <div class="kind-label" data-i18n="kbEmbedder">embedding model</div>
+              <select id="kb-embedder"></select>
+              <div class="row">
+                <div><div class="kind-label" data-i18n="kbChunk">chunk size</div>
+                  <input type="number" id="kb-chunk" value="800" min="100" max="8000" step="100"></div>
+                <div><div class="kind-label" data-i18n="kbOverlap">overlap</div>
+                  <input type="number" id="kb-overlap" value="120" min="0" step="20"></div>
+              </div>
+              <p class="hint" data-i18n="kbNewHint">in characters; a knowledge base keeps the embedding model it was created with</p>
+              <button id="btn-kb-create" style="width:100%" data-i18n="kbCreate">Create</button>
+            </details>
+            <div class="h" style="margin-top:16px" data-i18n="ragH">Retrieval</div>
+            <div class="kind-label" data-i18n="ragEmbedDev">embedding device</div>
+            <select id="rag-embed-dev"></select>
+            <div class="kind-label" data-i18n="ragReranker">reranker</div>
+            <select id="rag-reranker"></select>
+            <div class="kind-label" data-i18n="ragRerankDev">reranker device</div>
+            <select id="rag-rerank-dev"></select>
+            <div class="row">
+              <div><div class="kind-label" data-i18n="ragTopK">candidates</div>
+                <input type="number" id="rag-topk" value="20" min="1" max="200"></div>
+              <div><div class="kind-label" data-i18n="ragTopN">passages</div>
+                <input type="number" id="rag-topn" value="4" min="1" max="20"></div>
+              <div><div class="kind-label" data-i18n="ragMin">min score</div>
+                <input type="number" id="rag-min" value="0" min="0" max="1" step="0.05"></div>
+            </div>
+            <p class="hint" data-i18n="ragHint">vector search picks the candidates, the reranker re-scores them, and the top passages go to the model</p>
+            <div id="rag-status" class="slot-box"></div>
+            <button class="sec" id="btn-rag-unload" style="width:100%;margin-top:8px" data-i18n="ragUnload">Unload retrieval models</button>
+          </div>
+          <div id="kb-main">
+            <div id="kb-empty" class="hint" data-i18n="kbEmpty">Create a knowledge base on the left and add documents, then pick it in the Chat tab.</div>
+            <div id="kb-detail" style="display:none">
+              <div style="display:flex;align-items:center;gap:10px">
+                <h3 id="kb-title"></h3>
+                <button class="sec" id="btn-kb-delete" style="margin-left:auto;padding:5px 10px" data-i18n="kbDelete">Delete</button>
+              </div>
+              <div id="kb-meta" class="muted"></div>
+              <div id="kb-warn" class="note"></div>
+              <div id="kb-drop">
+                <div data-i18n="kbDrop">Drop files here or click to choose</div>
+                <div class="muted">txt · md · pdf · docx · html · csv · json · code</div>
+              </div>
+              <input type="file" id="kb-files" multiple style="display:none">
+              <div class="row inline-row">
+                <input type="text" id="kb-path" data-i18n-ph="kbPathPh" placeholder="…or a local file / folder path">
+                <button class="sec" id="btn-kb-path" data-i18n="kbAdd">Add</button>
+              </div>
+              <details class="box">
+                <summary data-i18n="kbPasteH">Paste text</summary>
+                <input type="text" id="kb-paste-name" data-i18n-ph="kbPasteNamePh" placeholder="title (optional)">
+                <textarea id="kb-paste" rows="5"></textarea>
+                <button class="sec" id="btn-kb-paste" data-i18n="kbAdd">Add</button>
+              </details>
+              <div id="kb-progress"></div>
+              <table id="kb-docs">
+                <thead><tr><th data-i18n="kbDocCol">Document</th><th class="num" data-i18n="kbChunksCol">chunks</th>
+                  <th class="num" data-i18n="kbCharsCol">chars</th><th class="num" data-i18n="kbAddedCol">added</th><th></th></tr></thead>
+                <tbody></tbody>
+              </table>
+              <div id="kb-docs-empty" class="hint" style="margin-top:8px" data-i18n="kbNoDocs">No documents yet.</div>
+              <div class="h" style="margin-top:20px" data-i18n="kbTestH">Retrieval test</div>
+              <div class="row inline-row">
+                <input type="text" id="kb-q" data-i18n-ph="kbQPh" placeholder="ask something to preview what would be retrieved">
+                <button id="btn-kb-search" data-i18n="kbSearch">Search</button>
+              </div>
+              <div id="kb-results"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -288,6 +434,21 @@
 const $ = (id) => document.getElementById(id);
 let attachedImages = [], pollTimer = null, generating = false;
 let lastStatus = {};
+let kbs = [], kbSel = null;  // knowledge bases + the one shown in the Knowledge tab
+
+/* DOM builder: text goes in as text nodes, so document content, file names
+   and model output can never inject markup */
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === "class") e.className = v;
+    else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e[k] = v;
+    else e.setAttribute(k, v);
+  }
+  for (const kid of kids) if (kid !== null && kid !== undefined) e.append(kid);
+  return e;
+}
 
 /* ---------------- i18n ---------------- */
 const I18N = {
@@ -299,7 +460,7 @@ const I18N = {
         segmented: "segmented (image only)",
         segHint: "static geometry fixed at load; VAE stays off NPU",
         load: "Load", unload: "Unload", chatTab: "Chat", imageTab: "Image",
-        devicesTab: "Devices", stream: "stream", clear: "clear", send: "Send",
+        devicesTab: "Devices", stream: "stream", think: "think", clear: "clear", send: "Send",
         generate: "Generate", width: "width", height: "height", steps: "steps",
         guidance: "guidance", images: "images", seedLabel: "seed",
         devCol: "Device", nameCol: "Name", typeCol: "Type",
@@ -317,7 +478,39 @@ const I18N = {
         destPh: "destination (default ./downloads/<name>)",
         proxyPh: "proxy (optional)",
         downloadBtn: "Download",
-        dlRunning: "downloading…", dlDone: "done", dlFailed: "failed" },
+        dlRunning: "downloading…", dlDone: "done", dlFailed: "failed",
+        kbTab: "Knowledge", kbListH: "Knowledge bases", kbNewH: "+ New knowledge base",
+        kbNamePh: "name, e.g. product docs", kbEmbedder: "embedding model",
+        kbChunk: "chunk size", kbOverlap: "overlap",
+        kbNewHint: "in characters; a knowledge base keeps the embedding model it was created with",
+        kbCreate: "Create", kbNoEmbedder: "no embedding model found (models/embed)",
+        ragH: "Retrieval", ragEmbedDev: "embedding device", ragReranker: "reranker",
+        ragRerankDev: "reranker device", ragTopK: "candidates", ragTopN: "passages",
+        ragMin: "min score", ragNone: "none",
+        ragHint: "vector search picks the candidates, the reranker re-scores them, and the top passages go to the model; min score (0 = off) drops weak passages — rerank score, or cosine without a reranker",
+        ragUnload: "Unload retrieval models",
+        ragIdle: "no retrieval model loaded yet (loaded on first use)",
+        kbEmpty: "Create a knowledge base on the left and add documents, then pick it in the Chat tab.",
+        kbDelete: "Delete", kbDrop: "Drop files here or click to choose",
+        kbPathPh: "…or a local file / folder path (re-adding refreshes changed files)",
+        kbAdd: "Add", kbPasteH: "Paste text", kbPasteNamePh: "title (optional)",
+        kbDocCol: "Document", kbChunksCol: "chunks", kbCharsCol: "chars", kbAddedCol: "added",
+        kbNoDocs: "No documents yet.", kbTestH: "Retrieval test",
+        kbQPh: "ask something to preview what would be retrieved", kbSearch: "Search",
+        kbOff: "no knowledge base", kbNone: "no knowledge bases yet",
+        kbDeleteConfirm: "Delete knowledge base \"{name}\" and all its documents?",
+        kbDocDeleteConfirm: "Remove \"{name}\" from the knowledge base?",
+        kbEmbedderMissing: "embedding model not found: {path}",
+        kbKept: "passages kept", docU: "doc", chunkU: "chunk", charU: "char", remove: "remove",
+        st_read: "reading", st_chunk: "splitting", st_load: "loading the embedding model for",
+        st_embed: "embedding", st_save: "saving", queued: "queued", cancel: "Cancel",
+        unchanged: "unchanged", replaced: "updated", readFailed: "could not read (folders: use the path box)",
+        ragSearching: "🔎 searching the knowledge base…",
+        ragLoadEmbed: "⏳ loading embedding model {d}…", ragLoadRerank: "⏳ loading reranker {d}…",
+        ragReranking: "↕ reranking {d} candidates…",
+        sourcesH: "{n} sources · {kb}", noHits: "no passage above min score in {kb}",
+        thinking: "thinking…", thought: "thought process", stop: "Stop",
+        maxTokens: "stopped at the max token limit (raise max)", stopped: "stopped" },
   zh: { settings: "设置", language: "语言", theme: "界面主题",
         dark: "深色", light: "浅色", extraPaths: "额外模型路径",
         persist: "持久化保存设置（重启后保留）", ok: "确定",
@@ -326,7 +519,7 @@ const I18N = {
         segmented: "分段执行（仅生图）",
         segHint: "加载时固定静态几何；VAE 保持在 NPU 之外",
         load: "加载", unload: "卸载", chatTab: "对话", imageTab: "生图",
-        devicesTab: "设备", stream: "流式", clear: "清空", send: "发送",
+        devicesTab: "设备", stream: "流式", think: "深度思考", clear: "清空", send: "发送",
         generate: "生成", width: "宽", height: "高", steps: "步数",
         guidance: "引导", images: "数量", seedLabel: "种子",
         devCol: "设备", nameCol: "名称", typeCol: "类型",
@@ -344,16 +537,53 @@ const I18N = {
         destPh: "目标路径（默认 ./downloads/<名称>）",
         proxyPh: "代理（可选）",
         downloadBtn: "下载",
-        dlRunning: "下载中…", dlDone: "完成", dlFailed: "失败" }
+        dlRunning: "下载中…", dlDone: "完成", dlFailed: "失败",
+        kbTab: "知识库", kbListH: "知识库列表", kbNewH: "+ 新建知识库",
+        kbNamePh: "名称，例如：产品文档", kbEmbedder: "向量化模型",
+        kbChunk: "分块大小", kbOverlap: "重叠",
+        kbNewHint: "单位为字符；知识库创建后固定使用所选向量化模型",
+        kbCreate: "创建", kbNoEmbedder: "未找到向量化模型（models/embed）",
+        ragH: "检索设置", ragEmbedDev: "向量化设备", ragReranker: "重排模型",
+        ragRerankDev: "重排设备", ragTopK: "候选数", ragTopN: "引用段数",
+        ragMin: "最低分", ragNone: "不使用",
+        ragHint: "向量检索召回候选，重排模型重新打分，得分最高的几段送入模型；最低分（0 为关闭）过滤弱相关段落——启用重排时作用于重排分数，否则作用于余弦相似度",
+        ragUnload: "卸载检索模型",
+        ragIdle: "尚未加载检索模型（首次使用时自动加载）",
+        kbEmpty: "在左侧新建知识库并添加文档，然后在「对话」页选择它。",
+        kbDelete: "删除", kbDrop: "拖放文件到此处，或点击选择",
+        kbPathPh: "……或本地文件 / 文件夹路径（再次添加会更新有变化的文件）",
+        kbAdd: "添加", kbPasteH: "粘贴文本", kbPasteNamePh: "标题（可选）",
+        kbDocCol: "文档", kbChunksCol: "分块", kbCharsCol: "字符", kbAddedCol: "添加时间",
+        kbNoDocs: "暂无文档。", kbTestH: "检索测试",
+        kbQPh: "输入问题，预览检索结果", kbSearch: "检索",
+        kbOff: "不使用知识库", kbNone: "还没有知识库",
+        kbDeleteConfirm: "删除知识库「{name}」及其全部文档？",
+        kbDocDeleteConfirm: "从知识库中移除「{name}」？",
+        kbEmbedderMissing: "向量化模型不存在：{path}",
+        kbKept: "段入选", docU: "篇文档", chunkU: "个分块", charU: "字符", remove: "移除",
+        st_read: "读取", st_chunk: "分块", st_load: "加载向量化模型，准备处理",
+        st_embed: "向量化", st_save: "保存", queued: "个排队中", cancel: "取消",
+        unchanged: "未变化", replaced: "已更新", readFailed: "无法读取（文件夹请使用路径框）",
+        ragSearching: "🔎 正在检索知识库…",
+        ragLoadEmbed: "⏳ 正在加载向量化模型 {d}…", ragLoadRerank: "⏳ 正在加载重排模型 {d}…",
+        ragReranking: "↕ 正在重排 {d} 个候选…",
+        sourcesH: "{n} 条参考 · {kb}", noHits: "「{kb}」中没有达到最低分的段落",
+        thinking: "思考中…", thought: "思考过程", stop: "停止",
+        maxTokens: "已达到最大 token 数（可调大 max）", stopped: "已停止" }
 };
 let LANG = "en";
 const t = (k) => (I18N[LANG] || I18N.en)[k] || k;
+const tf = (k, vars) => t(k).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? "");
+// "3 chunks" / "1 chunk" / "3 个分块"
+const count = (n, unit) => `${n} ${t(unit)}${LANG === "en" && +n !== 1 ? "s" : ""}`;
 function applyLang() {
   document.querySelectorAll("[data-i18n]").forEach(el =>
     el.textContent = t(el.dataset.i18n));
   document.querySelectorAll("[data-i18n-ph]").forEach(el =>
     el.placeholder = t(el.dataset.i18nPh));
   renderStatus(lastStatus);
+  setBusy(generating);
+  fillKBSelect(); fillRetrievalSelects(); renderKBList(); renderKB(); pollIngest();
 }
 
 /* ---------------- settings ---------------- */
@@ -369,9 +599,13 @@ function collectUI() {
     kind: $("sel-kind").value, model: $("sel-model").value,
     variant: $("sel-variant").value, device: $("device").value,
     chat: { max: $("p-max").value, temp: $("p-temp").value,
-            top_p: $("p-topp").value, seed: $("p-seed").value },
+            top_p: $("p-topp").value, seed: $("p-seed").value, think: $("p-think").checked },
     image: { w: $("i-w").value, h: $("i-h").value, steps: $("i-steps").value,
              cfg: $("i-cfg").value, num: $("i-num").value, seed: $("i-seed").value },
+    rag: { kb: $("rag-kb").value, embedder: $("kb-embedder").value,
+           reranker: $("rag-reranker").value, embed_dev: $("rag-embed-dev").value,
+           rerank_dev: $("rag-rerank-dev").value, top_k: $("rag-topk").value,
+           top_n: $("rag-topn").value, min: $("rag-min").value },
   };
 }
 
@@ -390,10 +624,21 @@ function applyUI(ui) {
   const set = (id, v) => { if (v !== undefined && v !== null && v !== "")
     $(id).value = v; };
   if (ui.chat) { set("p-max", ui.chat.max); set("p-temp", ui.chat.temp);
-    set("p-topp", ui.chat.top_p); set("p-seed", ui.chat.seed); }
+    set("p-topp", ui.chat.top_p); set("p-seed", ui.chat.seed);
+    if (typeof ui.chat.think === "boolean") $("p-think").checked = ui.chat.think; }
   if (ui.image) { set("i-w", ui.image.w); set("i-h", ui.image.h);
     set("i-steps", ui.image.steps); set("i-cfg", ui.image.cfg);
     set("i-num", ui.image.num); set("i-seed", ui.image.seed); }
+  if (ui.rag) {
+    // unlike fire(), "" is a real choice here (no knowledge base / no reranker)
+    const pick = (id, v) => { if (typeof v === "string" &&
+      [...$(id).options].some(o => o.value === v)) $(id).value = v; };
+    pick("rag-kb", ui.rag.kb); pick("kb-embedder", ui.rag.embedder);
+    pick("rag-reranker", ui.rag.reranker); pick("rag-embed-dev", ui.rag.embed_dev);
+    pick("rag-rerank-dev", ui.rag.rerank_dev);
+    set("rag-topk", ui.rag.top_k); set("rag-topn", ui.rag.top_n); set("rag-min", ui.rag.min);
+    if ($("rag-kb").value) { kbSel = $("rag-kb").value; renderKBList(); renderKB(); }
+  }
   return restored;
 }
 
@@ -485,10 +730,18 @@ $("btn-download").onclick = async () => {
   pollDownload();
 };
 ["sel-kind", "sel-model", "sel-variant", "device",
- "p-max", "p-temp", "p-topp", "p-seed",
- "i-w", "i-h", "i-steps", "i-cfg", "i-num", "i-seed"].forEach(id => {
+ "p-max", "p-temp", "p-topp", "p-seed", "p-think",
+ "i-w", "i-h", "i-steps", "i-cfg", "i-num", "i-seed",
+ "rag-kb", "kb-embedder", "rag-reranker", "rag-embed-dev", "rag-rerank-dev",
+ "rag-topk", "rag-topn", "rag-min"].forEach(id => {
   $(id).addEventListener("change", scheduleUISync);
   $(id).addEventListener("input", scheduleUISync);
+});
+$("rag-topk").addEventListener("change", () => {
+  if (+$("rag-topn").value > +$("rag-topk").value) $("rag-topn").value = $("rag-topk").value;
+});
+$("rag-topn").addEventListener("change", () => {
+  if (+$("rag-topn").value > +$("rag-topk").value) $("rag-topk").value = $("rag-topn").value;
 });
 
 /* ---------------- tabs ---------------- */
@@ -498,15 +751,17 @@ for (const tab of document.querySelectorAll(".tab"))
     document.querySelectorAll(".pane").forEach(p =>
       p.classList.toggle("active", p.id === "pane-" + tab.dataset.pane));
     if (tab.dataset.pane === "devices") refreshDevices();
+    if (tab.dataset.pane === "kb") { refreshKB(); refreshRetrieval(); pollIngest(); }
   };
 
 /* ---------------- catalog & devices ---------------- */
 let catalog = [], picked = null;
+const MAIN_KINDS = ["llm", "vlm", "image"];  // embed / rerank live in the Knowledge tab
 
 function groupByKind() {
   const kinds = [];
   for (const g of catalog)
-    if (!kinds.includes(g.kind)) kinds.push(g.kind);
+    if (MAIN_KINDS.includes(g.kind) && !kinds.includes(g.kind)) kinds.push(g.kind);
   return kinds;
 }
 
@@ -565,11 +820,12 @@ async function refreshCatalog() {
   const kinds = groupByKind();
   fillSelect($("sel-kind"), kinds.map(k => ({__key: k})),
              k => k.__key.toUpperCase());
-  const empty = !catalog.length;
+  const empty = !kinds.length;
   $("catalog-empty").style.display = empty ? "block" : "none";
   ["sel-kind", "sel-model", "sel-variant"].forEach(id =>
     $(id).disabled = empty);
   if (!empty) { populateModels(); setPicked(); }
+  fillRetrievalSelects();
 }
 
 $("sel-kind").onchange = populateModels;
@@ -592,6 +848,13 @@ async function refreshDevices() {
   }
   sel.value = ordered.includes(prev) ? prev
             : (ordered.includes("GPU") ? "GPU" : ordered[0]);
+  // retrieval models: GPU when present (measured ~4-8x faster than CPU for
+  // Qwen3-Embedding / the rerankers), else CPU
+  for (const id of ["rag-embed-dev", "rag-rerank-dev"]) {
+    const s = $(id), was = s.value;
+    s.replaceChildren(...ordered.map(d => new Option(d, d)));
+    s.value = ordered.includes(was) ? was : (ordered.includes("GPU") ? "GPU" : "CPU");
+  }
   const tb = $("dev-table").querySelector("tbody"); tb.innerHTML = "";
   for (const d of devs) {
     const tr = document.createElement("tr");
@@ -689,9 +952,155 @@ $("img-attach").onchange = (e) => {
 $("btn-attach").onclick = () => $("img-attach").click();
 $("btn-clear").onclick = () => { history = []; messagesEl.innerHTML = ""; };
 
-async function send() {
+/* reasoning models (Qwen3 …) emit "<think>…</think>answer"; the open tag
+   may sit in the prompt, leaving only the close tag in the output */
+function splitThink(text) {
+  const open = text.indexOf("<think>"), close = text.indexOf("</think>");
+  if (close < 0)
+    return open < 0 ? { think: "", answer: text, thinking: false }
+                    : { think: text.slice(open + 7), answer: "", thinking: true };
+  return { think: text.slice(open >= 0 && open < close ? open + 7 : 0, close),
+           answer: text.slice(close + 8), thinking: false };
+}
+
+const CITE_RE = /\[(\d{1,2}(?:\s*[,，、]\s*\d{1,2})*)\]/g;
+
+/* answer text with [n] / [1, 2] citations turned into links to its sources */
+function renderCited(box, text, count, onCite) {
+  box.textContent = "";
+  let last = 0;
+  if (count) for (const m of text.matchAll(CITE_RE)) {
+    const nums = m[1].split(/[,，、]/).map(s => +s.trim());
+    if (!nums.every(k => k >= 1 && k <= count)) continue;
+    box.append(text.slice(last, m.index));
+    for (const k of nums)
+      box.append(el("a", { class: "cite", text: `[${k}]`, onclick: () => onCite(k) }));
+    last = m.index + m[0].length;
+  }
+  box.append(text.slice(last));
+}
+
+const scoreText = (h) => h.rerank !== undefined
+  ? `rerank ${h.rerank.toFixed(3)} · cos ${h.cosine.toFixed(3)}` : `cos ${h.cosine.toFixed(3)}`;
+
+/* one assistant bubble: retrieval stage line, collapsible reasoning,
+   the answer (citations linked) and the passages it was given */
+function assistantView() {
+  const bubble = addMsg("assistant", "");
+  const stage = el("div", { class: "rag-stage" });
+  const thinkSum = el("summary"), thinkBody = el("div");
+  const think = el("details", { class: "think" }, thinkSum, thinkBody);
+  const answer = el("div"), cursor = el("span", { class: "cursor" });
+  think.hidden = true; think.open = true;
+  bubble.append(stage, think, answer);
+  answer.append(cursor);
+  let sources = null, srcEls = [], collapsed = false;
+  const scroll = () => { messagesEl.scrollTop = messagesEl.scrollHeight; };
+  const cite = (k) => {
+    if (!sources) return;
+    sources.open = true;
+    const s = srcEls[k - 1];
+    s.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    s.classList.add("flash"); setTimeout(() => s.classList.remove("flash"), 1200);
+  };
+  return {
+    bubble,
+    stage(text) { stage.textContent = text || ""; scroll(); },
+    sources(info) {
+      stage.textContent = "";
+      const hits = info.hits || [];
+      sources = el("details", { class: "sources" }, el("summary", { text: "📚 " + (hits.length
+        ? tf("sourcesH", { n: hits.length, kb: info.kb.name })
+        : tf("noHits", { kb: info.kb.name }) +
+          (info.best != null ? ` (best ${info.best.toFixed(3)})` : "")) }));
+      srcEls = hits.map((h, i) => el("div", { class: "src" },
+        el("div", { class: "hit-head" }, el("b", { text: `[${i + 1}] ${h.name}` }),
+           el("span", { text: `#${h.chunk + 1}` }), el("span", { class: "score", text: scoreText(h) })),
+        el("div", { class: "src-text", text: h.text })));
+      sources.append(...srcEls);
+      bubble.append(sources);
+      scroll();
+    },
+    render(text) {
+      const r = splitThink(text), th = r.think.trim();
+      think.hidden = !th && !r.thinking;
+      thinkSum.textContent = r.thinking ? t("thinking") : t("thought");
+      thinkBody.textContent = th;
+      if (!r.thinking && th && !collapsed) { think.open = false; collapsed = true; }
+      renderCited(answer, r.answer.replace(/^\s+/, ""), srcEls.length, cite);
+      (r.thinking ? thinkBody : answer).append(cursor);
+      scroll();
+    },
+    usage(ev) {
+      bubble.title = `${ev.usage.prompt_tokens}+${ev.usage.completion_tokens} tokens · ${ev.finish_reason}`;
+      if (ev.finish_reason === "length") this.note("⋯ " + t("maxTokens"));
+    },
+    note(text) { bubble.append(el("div", { class: "note", text })); },
+    fail(message, partial) {
+      if (!partial) answer.textContent = "error: " + message;
+      else this.note("error: " + message);
+    },
+    done() {
+      cursor.remove(); stage.textContent = "";
+      thinkSum.textContent = t("thought");  // even if cut off mid-thought
+    },
+  };
+}
+
+/* SSE over fetch: calls onEvent(obj) per "data:" event until [DONE] */
+async function readSSE(resp, onEvent) {
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const ev = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        if (!ev.startsWith("data: ")) continue;
+        const payload = ev.slice(6);
+        if (payload === "[DONE]") return;
+        onEvent(JSON.parse(payload));
+      }
+    }
+  } finally { reader.cancel().catch(() => {}); }
+}
+
+function stageText(ev) {
+  const d = ev.detail ?? "";
+  return { retrieve: t("ragSearching"), load_embed: tf("ragLoadEmbed", { d }),
+           load_rerank: tf("ragLoadRerank", { d }),
+           rerank: tf("ragReranking", { d }) }[ev.stage] || "";
+}
+
+function ragParams(kb) {
+  let top_k = +$("rag-topk").value || 20, top_n = +$("rag-topn").value || 4;
+  if (top_n > top_k) top_k = top_n;  // server requires top_k >= top_n
+  return { kb, top_k, top_n,
+           min_score: +$("rag-min").value || 0, reranker: $("rag-reranker").value || null,
+           embed_device: $("rag-embed-dev").value, rerank_device: $("rag-rerank-dev").value };
+}
+
+/* while a reply streams, Send turns into Stop */
+let abortCtl = null, stopArmed = false, stopArmTimer = 0;
+function setBusy(busy) {
+  $("btn-send").textContent = busy ? t("stop") : t("send");
+  $("btn-send").classList.toggle("stop", busy);
+  clearTimeout(stopArmTimer);
+  stopArmed = false;
+  // the click that started generation must not also abort it (double-click)
+  if (busy) stopArmTimer = setTimeout(() => { stopArmed = generating; }, 300);
+}
+
+async function send(ev) {
+  if (generating) {
+    if (stopArmed && abortCtl && !(ev && ev.detail > 1)) abortCtl.abort();
+    return;
+  }
   const text = $("chat-input").value.trim();
-  if (!text || generating) return;
+  if (!text) return;
   $("chat-input").value = "";
   const imgs = attachedImages; attachedImages = [];
   addMsg("user", text, imgs.length ? imgs.map(b64ToThumb) : undefined);
@@ -700,55 +1109,52 @@ async function send() {
   if ($("p-temp").value !== "") params.temperature = +$("p-temp").value;
   if ($("p-topp").value !== "") params.top_p = +$("p-topp").value;
   if ($("p-seed").value !== "") params.seed = +$("p-seed").value;
-  const body = { messages: history, params, stream: $("p-stream").checked };
+  const stream = $("p-stream").checked;
+  const body = { messages: history, params, stream, think: $("p-think").checked };
   if (imgs.length) body.images = imgs;
+  const kb = $("rag-kb").value;
+  if (kb) body.rag = ragParams(kb);
 
-  generating = true; $("btn-send").disabled = true;
-  const bubble = addMsg("assistant", "");
-  const cursor = document.createElement("span"); cursor.className = "cursor";
-  bubble.appendChild(cursor);
+  generating = true; setBusy(true);
+  abortCtl = new AbortController();
+  const view = assistantView();
+  if (kb) view.stage(t("ragSearching"));
   let acc = "";
   try {
-    const resp = await fetch("/api/chat", { method: "POST",
+    const resp = await fetch("/api/chat", { method: "POST", signal: abortCtl.signal,
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!resp.ok || !$("p-stream").checked) {
+    if (!resp.ok || !stream) {
       const j = await resp.json();
       if (j.error) throw new Error(j.error);
-      acc = j.content; bubble.textContent = acc;
+      if (j.rag) view.sources(j.rag);
+      acc = j.content; view.render(acc); view.usage(j);
     } else {
-      const reader = resp.body.getReader(), dec = new TextDecoder();
-      let buf = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let idx;
-        while ((idx = buf.indexOf("\n\n")) >= 0) {
-          const ev = buf.slice(0, idx); buf = buf.slice(idx + 2);
-          if (!ev.startsWith("data: ")) continue;
-          const payload = ev.slice(6);
-          if (payload === "[DONE]") { buf = ""; break; }
-          const obj = JSON.parse(payload);
-          if (obj.delta) { acc += obj.delta; bubble.textContent = acc;
-            bubble.appendChild(cursor);
-            messagesEl.scrollTop = messagesEl.scrollHeight; }
-          if (obj.usage) bubble.title =
-            `${obj.usage.prompt_tokens}+${obj.usage.completion_tokens} tokens · ${obj.finish_reason}`;
-        }
-      }
+      await readSSE(resp, (ev) => {
+        if (ev.error) throw new Error(ev.error);
+        if (ev.stage) view.stage(stageText(ev));
+        if (ev.rag) view.sources(ev.rag);
+        if (ev.delta) { acc += ev.delta; view.render(acc); }
+        if (ev.usage) view.usage(ev);
+      });
     }
     history.push({ role: "assistant", content: acc });
   } catch (e) {
-    bubble.textContent = acc || ("error: " + e.message);
-    history.pop(); // do not keep the user turn on failure
+    if (e.name === "AbortError" && acc) {  // stopped mid-reply: keep what arrived
+      view.note(t("stopped"));
+      history.push({ role: "assistant", content: acc });
+    } else {
+      view.fail(e.name === "AbortError" ? t("stopped") : e.message, acc);
+      history.pop(); // do not keep the user turn on failure
+    }
   } finally {
-    cursor.remove(); generating = false; $("btn-send").disabled = false;
+    view.done(); generating = false; setBusy(false); abortCtl = null;
+    if (kb) refreshRetrieval();
   }
 }
 function b64ToThumb(src) { return src; }
 $("btn-send").onclick = send;
 $("chat-input").onkeydown = (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!generating) send(); }
 };
 
 /* ---------------- image ---------------- */
@@ -775,6 +1181,288 @@ $("btn-gen").onclick = async () => {
     const sp = gal.querySelector("[data-spin]"); if (sp) sp.remove();
     alert("generation failed: " + e.message);
   } finally { generating = false; $("btn-gen").disabled = false; }
+};
+
+/* ---------------- knowledge bases (RAG) ---------------- */
+let ingestTimer = null, ingestSeen = 0, retrievalFilled = false;
+const UPLOAD_BATCH = 24 << 20;  // base64 characters per /api/kb/ingest request
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  let j;
+  try { j = await r.json(); } catch (e) { j = { error: `HTTP ${r.status}` }; }
+  if (!r.ok || (j && j.error)) throw new Error((j && j.error) || `HTTP ${r.status}`);
+  return j;
+}
+const call = (method, path, body) => api(path, { method,
+  headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+
+function retrievalVariants(kind) {
+  const out = [];
+  for (const g of catalog) if (g.kind === kind)
+    for (const v of g.variants) out.push({ path: v.path, label: `${g.name} / ${v.name}` });
+  return out;
+}
+
+function fillRetrievalSelects() {
+  const emb = $("kb-embedder"), rr = $("rag-reranker");
+  const prevE = emb.value, prevR = rr.value;
+  const embs = retrievalVariants("embed"), rers = retrievalVariants("rerank");
+  emb.replaceChildren(...embs.map(v => new Option(v.label, v.path)));
+  if (!embs.length) emb.add(new Option(t("kbNoEmbedder"), ""));
+  rr.replaceChildren(new Option(t("ragNone"), ""), ...rers.map(v => new Option(v.label, v.path)));
+  $("btn-kb-create").disabled = !embs.length;
+  if (!retrievalFilled && (embs.length || rers.length)) {
+    // first fill: prefer a multilingual embedder and use a reranker when one exists
+    const multi = embs.find(v => /qwen3|m3|multilingual/i.test(v.label));
+    if (multi) emb.value = multi.path;
+    if (rers.length) rr.value = rers[0].path;
+    retrievalFilled = true;
+  } else {
+    if ([...emb.options].some(o => o.value === prevE)) emb.value = prevE;
+    if ([...rr.options].some(o => o.value === prevR)) rr.value = prevR;
+  }
+}
+
+function fillKBSelect() {
+  const sel = $("rag-kb"), prev = sel.value;
+  sel.replaceChildren(new Option(t("kbOff"), ""));
+  for (const kb of kbs) {
+    const o = new Option(kb.name, kb.id);
+    o.disabled = !kb.embedder_ok || !kb.chunks;  // nothing to retrieve yet
+    sel.add(o);
+  }
+  if (kbs.some(k => k.id === prev)) sel.value = prev;
+}
+
+async function refreshKB() {
+  try { kbs = await api("/api/kb"); } catch (e) { return; }
+  fillKBSelect();
+  if (!kbs.some(k => k.id === kbSel))
+    kbSel = $("rag-kb").value || (kbs.length ? kbs[kbs.length - 1].id : null);
+  if (!kbs.length) $("kb-new").open = true;
+  renderKBList(); renderKB();
+}
+
+function renderKBList() {
+  const box = $("kb-list");
+  box.replaceChildren();
+  if (!kbs.length) { box.append(el("div", { class: "hint", text: t("kbNone") })); return; }
+  for (const kb of kbs)
+    box.append(el("div", { class: "kb-item" + (kb.id === kbSel ? " active" : ""),
+      onclick: () => { kbSel = kb.id; renderKBList(); renderKB(); pollIngest(); } },
+      el("div", { text: kb.name }),
+      el("div", { class: "muted", text: `${count(kb.docs.length, "docU")} · ${count(kb.chunks, "chunkU")}` })));
+}
+
+const fmtNum = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e4 ? Math.round(n / 1e3) + "k" : String(n);
+const fmtTime = (s) => new Date(s * 1000).toLocaleString(undefined,
+  { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+function renderKB() {
+  const kb = kbs.find(k => k.id === kbSel);
+  $("kb-empty").style.display = kb ? "none" : "";
+  $("kb-detail").style.display = kb ? "" : "none";
+  if (!kb) return;
+  $("kb-title").textContent = kb.name;
+  const e = kb.embedder;
+  $("kb-meta").textContent = [e.name + (e.dim ? ` (${e.dim}d, ${e.pooling})` : ` (${e.pooling})`),
+    `${t("kbChunk")} ${kb.chunk_size}/${kb.chunk_overlap}`,
+    count(kb.docs.length, "docU"), count(kb.chunks, "chunkU"), count(fmtNum(kb.chars), "charU")].join(" · ");
+  $("kb-warn").textContent = kb.embedder_ok ? "" : tf("kbEmbedderMissing", { path: e.path });
+  const tb = $("kb-docs").querySelector("tbody");
+  tb.replaceChildren(...kb.docs.map(d => el("tr", null,
+    el("td", { text: d.name, title: d.path || d.name }),
+    el("td", { class: "num", text: d.chunks }),
+    el("td", { class: "num", text: fmtNum(d.chars) }),
+    el("td", { class: "num", text: fmtTime(d.added) }),
+    el("td", null, el("button", { class: "root-x", title: t("remove"), text: "×",
+                                  onclick: () => deleteDoc(kb, d) })))));
+  $("kb-docs-empty").style.display = kb.docs.length ? "none" : "";
+}
+
+$("rag-kb").addEventListener("change", () => {
+  if ($("rag-kb").value) { kbSel = $("rag-kb").value; renderKBList(); renderKB(); }
+});
+
+$("btn-kb-create").onclick = async () => {
+  const name = $("kb-name").value.trim();
+  if (!name) return $("kb-name").focus();
+  try {
+    const kb = await call("POST", "/api/kb", { name, embedder: $("kb-embedder").value,
+      chunk_size: +$("kb-chunk").value, chunk_overlap: +$("kb-overlap").value });
+    $("kb-name").value = ""; kbSel = kb.id; $("kb-new").open = false;
+  } catch (e) { return alert(e.message); }
+  refreshKB();
+};
+
+$("btn-kb-delete").onclick = async () => {
+  const kb = kbs.find(k => k.id === kbSel);
+  if (!kb || !confirm(tf("kbDeleteConfirm", { name: kb.name }))) return;
+  try { await call("DELETE", "/api/kb", { id: kb.id }); kbSel = null; }
+  catch (e) { alert(e.message); }
+  refreshKB();
+};
+
+async function deleteDoc(kb, d) {
+  if (!confirm(tf("kbDocDeleteConfirm", { name: d.name }))) return;
+  try { await call("DELETE", "/api/kb/doc", { kb: kb.id, doc: d.id }); }
+  catch (e) { alert(e.message); }
+  refreshKB();
+}
+
+/* documents are queued server-side and embedded in the background */
+const ingest = (body) => call("POST", "/api/kb/ingest",
+  { kb: kbSel, embed_device: $("rag-embed-dev").value, ...body });
+
+function readB64(file) {
+  return new Promise((resolve, reject) => {
+    const rd = new FileReader();
+    rd.onload = () => resolve(String(rd.result).split(",", 2)[1] || "");
+    rd.onerror = () => reject(rd.error);
+    rd.readAsDataURL(file);
+  });
+}
+
+/* a document's name identifies it (re-adding one updates it), so two
+   same-named files picked together get distinct names instead */
+function uniqueNames(files) {
+  const seen = new Map();
+  return files.map(f => {
+    const n = (seen.get(f.name) || 0) + 1;
+    seen.set(f.name, n);
+    return n === 1 ? f.name : f.name.replace(/(\.[^.]*)?$/, ` (${n})$1`);
+  });
+}
+
+async function uploadFiles(files) {
+  if (!kbSel || !files.length) return;
+  const names = uniqueNames(files);
+  let batch = [], size = 0;
+  const failed = [];
+  try {
+    for (const [i, f] of files.entries()) {
+      let data;
+      try { data = await readB64(f); } catch (e) { failed.push(f.name); continue; }
+      if (batch.length && size + data.length > UPLOAD_BATCH) {
+        await ingest({ files: batch }); batch = []; size = 0; pollIngest();
+      }
+      batch.push({ name: names[i], data }); size += data.length;
+    }
+    if (batch.length) await ingest({ files: batch });
+  } catch (e) { alert(e.message); }
+  if (failed.length) alert(`${t("readFailed")}: ${failed.join(", ")}`);
+  pollIngest();
+}
+
+const drop = $("kb-drop");
+drop.onclick = () => $("kb-files").click();
+$("kb-files").onchange = (e) => { uploadFiles([...e.target.files]); e.target.value = ""; };
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over");
+                       uploadFiles([...e.dataTransfer.files]); };
+// a file dropped beside the zone must not navigate away from the app
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => e.preventDefault());
+
+async function addPath() {
+  const p = $("kb-path").value.trim();
+  if (!p || !kbSel) return;
+  try { await ingest({ path: p }); $("kb-path").value = ""; }
+  catch (e) { alert(e.message); }
+  pollIngest();
+}
+$("btn-kb-path").onclick = addPath;
+$("kb-path").onkeydown = (e) => { if (e.key === "Enter") addPath(); };
+
+$("btn-kb-paste").onclick = async () => {
+  const text = $("kb-paste").value;
+  if (!text.trim() || !kbSel) return;
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+  const name = $("kb-paste-name").value.trim() || `pasted-${stamp}.txt`;
+  try {
+    await ingest({ files: [{ name, text }] });
+    $("kb-paste").value = ""; $("kb-paste-name").value = "";
+  } catch (e) { alert(e.message); }
+  pollIngest();
+};
+
+function renderIngest(s) {
+  const box = $("kb-progress");
+  box.replaceChildren();
+  const c = s.current;
+  if (c) {
+    const other = c.kb !== kbSel ? ` [${(kbs.find(k => k.id === c.kb) || {}).name || "?"}]` : "";
+    box.append(el("div", { class: "muted", text: `${t("st_" + c.stage)} ${c.name}${other}` +
+      (c.total ? ` · ${c.done}/${c.total}` : "") + (s.queued ? ` · ${s.queued} ${t("queued")}` : "") }),
+      el("div", { class: "prog" }, el("div", { style: `width:${c.total ? Math.round(100 * c.done / c.total) : 0}%` })));
+  }
+  if (c || s.queued)
+    box.append(el("button", { class: "sec", text: t("cancel"), style: "padding:4px 10px;margin-bottom:8px",
+      onclick: async () => { try { await call("POST", "/api/kb/ingest/cancel"); } catch (e) {} pollIngest(); } }));
+  for (const r of s.recent.filter(r => r.kb === kbSel).slice(0, 6)) {
+    const [cls, msg] = r.error ? ["err", `✗ ${r.name}: ${r.error}`]
+      : r.skipped ? ["muted", `= ${r.name} · ${t("unchanged")}`]
+      : ["ok", `✓ ${r.name} · ${count(r.chunks, "chunkU")}${r.replaced ? " · " + t("replaced") : ""}`];
+    box.append(el("div", { class: cls, style: "font-size:12px;word-break:break-all", text: msg }));
+  }
+}
+
+async function pollIngest() {
+  clearTimeout(ingestTimer);
+  let s;
+  try { s = await api("/api/kb/ingest"); } catch (e) { return; }
+  renderIngest(s);
+  const latest = s.recent.length ? s.recent[0].at : 0;
+  if (latest > ingestSeen) { ingestSeen = latest; refreshKB(); refreshRetrieval(); }
+  if (s.current || s.queued) ingestTimer = setTimeout(pollIngest, 700);
+}
+
+async function searchKB() {
+  const q = $("kb-q").value.trim();
+  if (!q || !kbSel) return;
+  const box = $("kb-results");
+  box.replaceChildren(el("div", { class: "spin" }));
+  $("btn-kb-search").disabled = true;
+  try {
+    const r = await call("POST", "/api/kb/search", { ...ragParams(kbSel), query: q });
+    const tm = r.timings, parts = [];
+    if (tm.load_ms !== undefined) parts.push(`load ${tm.load_ms} ms`);
+    parts.push(`embed ${tm.embed_ms} ms`, `search ${tm.search_ms} ms`);
+    if (tm.rerank_ms !== undefined) parts.push(`rerank ${tm.rerank_ms} ms`);
+    box.replaceChildren(el("div", { class: "muted", style: "margin-bottom:8px",
+      text: `${r.hits.length}/${r.candidates.length} ${t("kbKept")} · ${r.embedder}` +
+            (r.reranker ? ` → ${r.reranker}` : "") + ` · ${parts.join(" · ")}` }));
+    for (const c of r.candidates) {
+      const card = el("div", { class: "hit" + (c.kept ? "" : " dropped") },
+        el("div", { class: "hit-head" }, el("b", { text: c.name }),
+           el("span", { text: `#${c.chunk + 1}` }), el("span", { class: "score", text: scoreText(c) })),
+        el("div", { class: "hit-text", text: c.text }));
+      card.onclick = () => card.classList.toggle("open");
+      box.append(card);
+    }
+  } catch (e) {
+    box.replaceChildren(el("div", { class: "err", text: e.message }));
+  } finally {
+    $("btn-kb-search").disabled = false;
+    refreshRetrieval();
+  }
+}
+$("btn-kb-search").onclick = searchKB;
+$("kb-q").onkeydown = (e) => { if (e.key === "Enter") searchKB(); };
+
+async function refreshRetrieval() {
+  let s;
+  try { s = await api("/api/retrieval"); } catch (e) { return; }
+  const lines = s.embedders.map(m => `embed  ${m.name} · ${m.device}`);
+  if (s.reranker) lines.push(`rerank ${s.reranker.name} · ${s.reranker.device}`);
+  if (s.loading) lines.push(`… ${s.loading}`);
+  $("rag-status").textContent = lines.join("\n") || t("ragIdle");
+}
+$("btn-rag-unload").onclick = async () => {
+  try { await call("POST", "/api/retrieval/unload"); } catch (e) { alert(e.message); }
+  refreshRetrieval();
 };
 
 /* ---------------- extra model roots ---------------- */
@@ -822,9 +1510,9 @@ $("root-input").onkeydown = (e) => { if (e.key === "Enter") addRoot(); };
 
 /* ---------------- boot ---------------- */
 loadSettings()
-  .then(() => Promise.all([refreshCatalog(), refreshDevices()]))
+  .then(() => Promise.all([refreshCatalog(), refreshDevices(), refreshKB()]))
   .then(() => applyUI(SETTINGS.ui))
-  .then(() => refreshRoots());
+  .then(() => { refreshRoots(); refreshRetrieval(); pollIngest(); });
 fetch("/api/status").then(r => r.json()).then(renderStatus);
 startPolling();
 </script>

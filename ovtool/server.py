@@ -81,10 +81,14 @@ def _content_to_text(content) -> str:
     return str(content or "")
 
 
-def render_chat(tokenizer, messages: list[dict]) -> str:
+def render_chat(tokenizer, messages: list[dict],
+                extra_context: dict | None = None) -> str:
     history = [{"role": m.get("role", "user"),
                 "content": _content_to_text(m.get("content"))}
                for m in messages]
+    if extra_context:  # template variables, e.g. {"enable_thinking": False}
+        return tokenizer.apply_chat_template(history, add_generation_prompt=True,
+                                             extra_context=extra_context)
     return tokenizer.apply_chat_template(history, add_generation_prompt=True)
 
 
