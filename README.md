@@ -332,6 +332,15 @@ cached under `<model>/cache`), subsequent runs ~12s — on par with an all-GPU r
 near-identical output for the same seed. The registry blocks whole-pipeline `-d NPU` for
 image models but allows the segmented form; putting the VAE on NPU triggers a warning.
 
+**Full image-model audit (2026-09-29)**: all six models pass GPU generation in both
+variants (int8 + int4-g64, 13-39s each) and **all six int8 variants pass segmented
+NPU** (`--devices NPU,NPU,GPU` @ 512px): first-compile times SD-1.5 ~105s,
+SD-3.5 ~10.6min, FLUX.2-klein ~12.7min (smaller models compile in ~1-3min); warm
+cache loads are 11-21s. First compiles look like a hang (no progress output) —
+let them finish; the blob cache under `<model>/cache` also resumes interrupted
+compiles. int4-g64 on NPU remains blocked (Level0 compilation failure, registry
+note).
+
 > Note: diffusion models are officially recommended to run on **GPU** (which is also the default device).
 
 ## Device Selection Guide
