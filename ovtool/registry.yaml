@@ -325,7 +325,7 @@ models:
       int4-g64:
         devices: [GPU, CPU, AUTO]
         convert: "ovtool convert image black-forest-labs/FLUX.2-klein-4B -o ./flux2k-int4 --weight-format int4 --group-size 64"
-        note: 1024px/8 steps ~2m13s on iGPU
+        note: '1024px/8 steps ~2m13s on iGPU; int4 NPU segmented load not possible (int4 graphs fail Level0 compilation, same as other image models) — use int8 for --devices NPU,...; first int8 segmented NPU compile of the 4B denoiser takes several minutes and the blob cache resumes interrupted compiles'
 
   - id: microsoft/speecht5_tts
     kind: tts
