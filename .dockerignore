@@ -1,0 +1,16 @@
+# keep the image free of weights, build artifacts and local state
+.git
+.gitignore
+.dockerignore
+models/
+downloads/
+generated/
+generated-webui/
+out/
+docs/
+ovtool.egg-info/
+__pycache__/
+*.pyc
+*.log
+.zcode/
+.mimosa/

@@ -23,6 +23,37 @@ pip install "optimum-intel[openvino]" onnx   # conversion/quantization deps (or 
 
 After installation the command entry point is `ovtool` (equivalent to `python -m ovtool.cli`).
 
+## Docker
+
+A runtime image (~700MB, **no model weights, no torch/convert extras**) is published to GHCR:
+
+```bash
+docker pull ghcr.io/dunegym/ovtool:latest
+
+# models and the HF download cache live in volumes, never in the image
+docker volume create ovtool-models
+docker run --rm -v ovtool-models:/models ghcr.io/dunegym/ovtool devices
+
+# pull a pre-converted model from the models repo, then run
+docker run --rm -v ovtool-models:/models -v ovtool-cache:/cache \
+    ghcr.io/dunegym/ovtool download dunegym/openvino-models \
+    --subfolder llm/Qwen3-0.6B/int4-sym-g128 -o /models/llm/Qwen3-0.6B/int4-sym-g128
+docker run --rm -v ovtool-models:/models \
+    ghcr.io/dunegym/ovtool generate -m /models/llm/Qwen3-0.6B/int4-sym-g128 -d CPU "hello"
+
+# webui / serve inside a container must bind 0.0.0.0 to be reachable
+docker run -p 7860:7860 -v ovtool-models:/models \
+    ghcr.io/dunegym/ovtool webui --host 0.0.0.0 --models-dir /models
+```
+
+Notes: CPU inference works out of the box (verified ~58 tok/s on Qwen3-0.6B);
+GPU/NPU need device passthrough (e.g. `--device /dev/dri` + driver stack).
+Conversion/quantization is a host-side concern — the image only runs inference.
+Build locally with `docker build -t ovtool .` (`.dockerignore` excludes all
+weights). Publishing is automated by `.github/workflows/docker-publish.yml`
+on `v*` tags. Git-Bash/MSYS users: prefix docker commands with
+`MSYS_NO_PATHCONV=1` so `/models` style arguments are not rewritten.
+
 ## Quick Start
 
 ```bash
