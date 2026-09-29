@@ -207,10 +207,13 @@ def _b64_png(tensor_or_result) -> list[str]:
 
 
 def _load_model(spec: dict) -> None:
-    """Worker for /api/load; updates SLOT from a background thread."""
+    """Worker for /api/load; updates SLOT from a background thread.
+
+    The slot fields and the loading flag are claimed by the /api/load
+    dispatcher under load_lock; this thread only fills in the compiled
+    pipeline (a compile cannot be canceled, so nothing may reset the slot
+    underneath a running load)."""
     try:
-        SLOT.reset()
-        SLOT.loading = True
         SLOT.path, SLOT.kind = spec["path"], spec["kind"]
         SLOT.device = spec["device"]
         if spec.get("devices"):
@@ -609,17 +612,28 @@ class Handler(BaseHTTPRequestHandler):
         if not SLOT.load_lock.acquire(timeout=5):
             raise _ApiError(409, "another load is in progress")
         try:
-            if SLOT.pipe is not None or SLOT.loading:
-                _release()
-            threading.Thread(target=_load_model, args=(spec,), daemon=True).start()
+            if SLOT.loading:
+                # a compile in flight cannot be canceled; a second load thread
+                # would race the first on the slot, so refuse instead
+                raise _ApiError(409, "a load is already in progress; "
+                                     "wait for it to finish or restart")
+            if SLOT.pipe is not None:
+                _release()  # switching models: drop the resident pipeline
+            SLOT.loading = True  # claimed under the lock, before the thread
+            try:
+                threading.Thread(target=_load_model, args=(spec,),
+                                 daemon=True).start()
+            except BaseException:
+                SLOT.loading = False
+                raise
         finally:
             SLOT.load_lock.release()
         self._json(200, {"started": True})
 
     def _unload(self) -> None:
-        if SLOT.loading:
-            raise _ApiError(409, "load in progress")
-        with SLOT.load_lock:
+        with SLOT.load_lock:  # check + release atomically vs the dispatcher
+            if SLOT.loading:
+                raise _ApiError(409, "load in progress")
             _release()
         self._json(200, {"unloaded": True})
 

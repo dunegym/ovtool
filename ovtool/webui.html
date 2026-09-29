@@ -923,7 +923,10 @@ function showSlotError(e) {
 
 $("btn-load").onclick = loadModel;
 $("btn-unload").onclick = async () => {
-  await fetch("/api/unload", { method: "POST" });
+  // 409 while a load is compiling must surface, not silently "succeed"
+  const r = await (await fetch("/api/unload", { method: "POST" })).json();
+  if (r.error) return showSlotError(r.error);
+  showSlotError(null);
   const s = await (await fetch("/api/status")).json(); renderStatus(s);
   updateSlotInfo(t("loadFirst"));
 };
