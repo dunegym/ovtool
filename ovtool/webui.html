@@ -881,13 +881,21 @@ async function loadModel() {
   showSlotError(null); startPolling();
 }
 
+let pollEpoch = 0;
 function startPolling() {
   clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
+  // An in-flight tick of the previous cycle must not clear THIS interval
+  // (it reads the shared pollTimer after its await) and must not overwrite
+  // a render from a newer cycle — guard both with a per-cycle epoch.
+  const epoch = ++pollEpoch;
+  const tick = async () => {
     const s = await (await fetch("/api/status")).json();
+    if (epoch !== pollEpoch) return;  // superseded by a newer poll cycle
     renderStatus(s);
-    if (!s.loading) clearInterval(pollTimer);
-  }, 1200);
+    if (!s.loading) { clearInterval(pollTimer); pollTimer = null; }
+  };
+  tick();  // immediate first poll: status reacts the moment Load is clicked
+  pollTimer = setInterval(tick, 1200);
 }
 
 function renderStatus(s) {
