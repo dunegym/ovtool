@@ -267,6 +267,7 @@ def _load_model(spec: dict) -> None:
             SLOT.tokenizer = pipe.get_tokenizer()
         except Exception:
             SLOT.tokenizer = None
+        SLOT.error = None  # a successful load clears a previous failure
         SLOT.loaded_at = time.time()
     except BaseException as e:  # noqa: BLE001 - surface every failure to the UI
         SLOT.pipe = None
@@ -640,10 +641,10 @@ class Handler(BaseHTTPRequestHandler):
     def _require_chat(self):
         if SLOT.loading:
             raise _ApiError(409, "model is loading")
+        if SLOT.pipe is None and SLOT.error:
+            raise _ApiError(500, f"last load failed: {SLOT.error}")
         if SLOT.pipe is None or SLOT.kind not in ("llm", "vlm"):
             raise _ApiError(400, "load an llm/vlm model first")
-        if SLOT.error and SLOT.pipe is None:
-            raise _ApiError(500, SLOT.error)
 
     def _chat(self, body: dict) -> None:
         self._require_chat()
@@ -685,13 +686,17 @@ class Handler(BaseHTTPRequestHandler):
             rag_info = None
             if rag_opts:
                 messages, rag_info = self._retrieve(messages, rag_opts)
+            if not SLOT.gen_lock.acquire(timeout=GENERATION_LOCK_TIMEOUT):
+                raise _ApiError(409, "another generation is still running; "
+                                     "try again later")
             try:
-                with SLOT.gen_lock:
-                    result = SLOT.pipe.generate(
-                        self._prompt(messages, think, with_images=bool(images)),
-                        **gen_kwargs)
+                result = SLOT.pipe.generate(
+                    self._prompt(messages, think, with_images=bool(images)),
+                    **gen_kwargs)
             except Exception as e:  # noqa: BLE001 - e.g. prompt over the NPU budget
                 raise _ApiError(500, f"generation failed: {e}")
+            finally:
+                SLOT.gen_lock.release()
             text = result.texts[0] if hasattr(result, "texts") else str(result)
             usage = _usage(getattr(result, "perf_metrics", None))
             self._json(200, {"content": text, "usage": usage,
@@ -714,7 +719,12 @@ class Handler(BaseHTTPRequestHandler):
                 alive = self._sse({"id": rid, "rag": rag_info})
             if alive:
                 prompt_arg = self._prompt(messages, think, with_images=bool(images))
-                with SLOT.gen_lock:
+                # a queued request waits out the running one; the 409 must be
+                # reported in-band (SSE headers are already out)
+                if not SLOT.gen_lock.acquire(timeout=GENERATION_LOCK_TIMEOUT):
+                    raise _ApiError(409, "another generation is still running; "
+                                         "try again later")
+                try:
 
                     def on_subword(subword):
                         nonlocal alive
@@ -725,6 +735,8 @@ class Handler(BaseHTTPRequestHandler):
 
                     gen_kwargs["streamer"] = on_subword
                     result = SLOT.pipe.generate(prompt_arg, **gen_kwargs)
+                finally:
+                    SLOT.gen_lock.release()
             if alive:
                 usage = _usage(getattr(result, "perf_metrics", None))
                 self._sse({"id": rid, "usage": usage,
@@ -878,8 +890,13 @@ class Handler(BaseHTTPRequestHandler):
         if body.get("seed") is not None:
             kwargs["rng_seed"] = int(body["seed"])
         t0 = time.time()
-        with SLOT.gen_lock:
+        if not SLOT.gen_lock.acquire(timeout=GENERATION_LOCK_TIMEOUT):
+            raise _ApiError(409, "another generation is still running; "
+                                 "try again later")
+        try:
             result = SLOT.pipe.generate(prompt, **kwargs)
+        finally:
+            SLOT.gen_lock.release()
         urls = _b64_png(result)
         out_dir = Path(body.get("out_dir", "./generated-webui"))
         out_dir.mkdir(parents=True, exist_ok=True)

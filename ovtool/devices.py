@@ -34,17 +34,31 @@ def list_devices() -> list[dict]:
 
 
 def resolve_device(device: str) -> str:
-    """Validate the requested device, resolving AUTO meta-device."""
+    """Validate the requested device: a concrete device (CPU/GPU/NPU), a
+    subdevice (GPU.1), or a meta-device — bare (AUTO) or compound
+    (HETERO:GPU,CPU / MULTI:NPU,CPU), whose components are checked too."""
     core = get_core()
     available = core.get_available_devices()
     upper = device.upper()
     if upper in available:
         return device
-    if upper in META_DEVICES:
-        return upper  # meta-devices are always accepted by the runtime
+    if upper.split(".")[0] in available:
+        return upper  # subdevice of an available device, e.g. GPU.1
+    token, _, rest = upper.partition(":")
+    if token in META_DEVICES:
+        # compound form: every component must itself resolve
+        comps = [c.split(".")[0].strip() for c in rest.split(",")] if rest else []
+        unknown = [c for c in comps
+                   if c and c not in available and c not in META_DEVICES]
+        if unknown:
+            raise SystemExit(
+                f"Device '{device}' names unknown component(s) "
+                f"{', '.join(unknown)}. Available: {', '.join(available)}.")
+        return upper
     raise SystemExit(
         f"Device '{device}' is not available. Available: {', '.join(available)} "
-        f"(meta-devices like AUTO/HETERO/MULTI are also accepted)."
+        f"(meta-devices like AUTO, HETERO:GPU,CPU or MULTI:GPU,CPU are also "
+        f"accepted)."
     )
 
 
