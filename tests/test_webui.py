@@ -262,3 +262,59 @@ def test_rag_options_validation(tmp_path):
     with pytest.raises(rag.KBError):
         h._rag_options({"kb": "nosuch"})
     assert h._rag_options({"kb": None}) is None       # RAG off
+
+
+# ---------------- --api-key gating ---------------- #
+
+def _request(port, path, headers=None, data=None):
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}",
+                                 headers=headers or {}, data=data,
+                                 method="POST" if data else "GET")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def test_api_key_gates_api_but_not_the_page():
+    from http.server import ThreadingHTTPServer
+    import threading
+
+    class Gated(W.Handler):
+        api_key = "s3cret"
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Gated)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        status, body = _request(port, "/")            # UI page is public
+        assert status == 200 and b"ovtool webui" in body
+        status, body = _request(port, "/api/status")  # no key -> 401
+        assert status == 401 and b"API key" in body
+        status, _ = _request(port, "/api/status",
+                             {"Authorization": "Bearer wrong"})
+        assert status == 401
+        status, body = _request(port, "/api/status",
+                                {"Authorization": "Bearer s3cret"})
+        assert status == 200 and b'"loading"' in body
+        status, _ = _request(port, "/api/unload", data=b"{}")  # POST gated too
+        assert status == 401
+    finally:
+        httpd.shutdown()
+
+
+def test_no_api_key_means_open(tmp_path):
+    from http.server import ThreadingHTTPServer
+    import threading
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), W.Handler)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        status, _ = _request(port, "/api/status")
+        assert status == 200                        # default: no auth required
+    finally:
+        httpd.shutdown()

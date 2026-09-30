@@ -510,7 +510,8 @@ const I18N = {
         ragReranking: "↕ reranking {d} candidates…",
         sourcesH: "{n} sources · {kb}", noHits: "no passage above min score in {kb}",
         thinking: "thinking…", thought: "thought process", stop: "Stop",
-        maxTokens: "stopped at the max token limit (raise max)", stopped: "stopped" },
+        maxTokens: "stopped at the max token limit (raise max)", stopped: "stopped",
+        needKey: "This ovtool server requires an API key (--api-key)" },
   zh: { settings: "设置", language: "语言", theme: "界面主题",
         dark: "深色", light: "浅色", extraPaths: "额外模型路径",
         persist: "持久化保存设置（重启后保留）", ok: "确定",
@@ -569,7 +570,8 @@ const I18N = {
         ragReranking: "↕ 正在重排 {d} 个候选…",
         sourcesH: "{n} 条参考 · {kb}", noHits: "「{kb}」中没有达到最低分的段落",
         thinking: "思考中…", thought: "思考过程", stop: "停止",
-        maxTokens: "已达到最大 token 数（可调大 max）", stopped: "已停止" }
+        maxTokens: "已达到最大 token 数（可调大 max）", stopped: "已停止",
+        needKey: "该 ovtool 服务需要 API 密钥（--api-key）" }
 };
 let LANG = "en";
 const t = (k) => (I18N[LANG] || I18N.en)[k] || k;
@@ -585,6 +587,31 @@ function applyLang() {
   setBusy(generating);
   fillKBSelect(); fillRetrievalSelects(); renderKBList(); renderKB(); pollIngest();
 }
+
+/* every request goes through here: attach the stored API key (the server was
+   started with --api-key) and, on the first 401, ask for it once and retry;
+   concurrent 401s share the single prompt */
+const origFetch = window.fetch.bind(window);
+let keyPrompt = null;
+window.fetch = async (path, opts = {}) => {
+  const withKey = (o) => {
+    const key = localStorage.getItem("ovtool-api-key");
+    return key ? { ...o, headers: { ...(o.headers || {}),
+                                    Authorization: `Bearer ${key}` } } : o;
+  };
+  let resp = await origFetch(path, withKey(opts));
+  if (resp.status === 401) {
+    if (!keyPrompt) {
+      const key = prompt(t("needKey"));
+      if (key) localStorage.setItem("ovtool-api-key", key);
+      keyPrompt = Promise.resolve(key);
+      setTimeout(() => { keyPrompt = null; }, 0);
+    }
+    if (await keyPrompt)
+      resp = await origFetch(path, withKey(opts));
+  }
+  return resp;
+};
 
 /* ---------------- settings ---------------- */
 let SETTINGS = { theme: "dark", lang: "en", persist: false };
@@ -694,13 +721,17 @@ function renderDownload(d) {
   const box = $("dl-progress");
   if (!d || (!d.active && !d.error && !d.done_at)) { box.style.display = "none"; return; }
   box.style.display = "flex";
+  box.replaceChildren();
   const pct = d.bytes_total ? Math.round(100 * d.bytes_done / d.bytes_total) : 0;
   if (d.error)
-    box.innerHTML = `<span style="color:var(--err)" title="${d.error}">${t("dlFailed")}: ${d.repo}</span>`;
+    box.append(el("span", { style: "color:var(--err)", title: d.error,
+                            text: `${t("dlFailed")}: ${d.repo}` }));
   else if (d.done_at)
-    box.innerHTML = `<span style="color:var(--ok)">${t("dlDone")}: ${d.dest}</span>`;
+    box.append(el("span", { style: "color:var(--ok)",
+                            text: `${t("dlDone")}: ${d.dest}` }));
   else
-    box.innerHTML = `<span>${t("dlRunning")} ${pct}% · ${d.files_done}/${d.files_total} · ${d.current || ""}</span>`;
+    box.append(el("span", { text: `${t("dlRunning")} ${pct}% · ` +
+                            `${d.files_done}/${d.files_total} · ${d.current || ""}` }));
 }
 
 async function pollDownload() {
@@ -855,14 +886,14 @@ async function refreshDevices() {
     s.replaceChildren(...ordered.map(d => new Option(d, d)));
     s.value = ordered.includes(was) ? was : (ordered.includes("GPU") ? "GPU" : "CPU");
   }
-  const tb = $("dev-table").querySelector("tbody"); tb.innerHTML = "";
-  for (const d of devs) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td><code>${d.device}</code></td><td>${d.full_device_name || "?"}</td>
-      <td>${d.device_type || ""}</td><td>${d.driver_version || "?"}</td>
-      <td>${(d.subdevices || []).join(", ") || "-"}</td>`;
-    tb.appendChild(tr);
-  }
+  const tb = $("dev-table").querySelector("tbody");
+  tb.replaceChildren(...devs.map(d => el("tr", null,
+    el("td", null, el("code", { text: d.device })),
+    el("td", { text: d.full_device_name || "?" }),
+    el("td", { text: d.device_type || "" }),
+    el("td", { text: d.driver_version || "?" }),
+    el("td", { text: (d.subdevices || []).join(", ") || "-" }))));
+
 }
 
 /* ---------------- load / status ---------------- */
@@ -1184,9 +1215,10 @@ $("btn-gen").onclick = async () => {
     if (r.error) throw new Error(r.error);
     gal.querySelector("[data-spin]").remove();
     for (let i = 0; i < r.images.length; i++) {
-      gal.insertAdjacentHTML("afterbegin",
-        `<figure><img src="${r.images[i]}">
-         <figcaption>${body.prompt.slice(0, 60)} · ${r.elapsed_s}s · ${r.saved[i]}</figcaption></figure>`);
+      gal.insertBefore(el("figure", null,
+        el("img", { src: r.images[i] }),
+        el("figcaption", { text: `${body.prompt.slice(0, 60)} · ${r.elapsed_s}s · ${r.saved[i]}` })),
+        gal.firstChild);
     }
   } catch (e) {
     const sp = gal.querySelector("[data-spin]"); if (sp) sp.remove();

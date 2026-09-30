@@ -55,9 +55,11 @@ docker run --rm -v ovtool-models:/models -v ovtool-cache:/cache \
 docker run --rm -v ovtool-models:/models \
     ghcr.io/dunegym/ovtool generate -m /models/llm/Qwen3-0.6B/int4-sym-g128 -d CPU "hello"
 
-# webui / serve inside a container must bind 0.0.0.0 to be reachable
+# webui / serve inside a container must bind 0.0.0.0 to be reachable.
+# the webui can read/write local paths (KB ingestion, downloads, image
+# output) — behind 0.0.0.0 always pass --api-key and keep the port private
 docker run -p 7860:7860 -v ovtool-models:/models \
-    ghcr.io/dunegym/ovtool webui --host 0.0.0.0 --models-dir /models
+    ghcr.io/dunegym/ovtool webui --host 0.0.0.0 --api-key <secret> --models-dir /models
 ```
 
 Notes: CPU inference works out of the box (verified ~58 tok/s on Qwen3-0.6B);
@@ -231,11 +233,18 @@ Tools/function calling, `logprobs` and image content are rejected with a 400
 
 ```bash
 ovtool webui --port 7860 --models-dir ./models
+# expose beyond localhost only with a key:
+ovtool webui --host 0.0.0.0 --api-key secret --models-dir ./models
 ```
 
 Opens a single-page UI (no build step, no CDN dependencies) over the models
 directory (`<kind>/<model>/<variant>/` layout, same as the
-[openvino-models](https://huggingface.co/dunegym/openvino-models) repo):
+[openvino-models](https://huggingface.co/dunegym/openvino-models) repo).
+The web UI can read and write local paths (knowledge-base ingestion, image
+output and download destinations), so it binds to 127.0.0.1 by default; with
+`--api-key` every `/api/*` call requires `Authorization: Bearer <key>` (the
+browser UI asks for the key once and stores it) — use it whenever `--host`
+is not loopback. Tabs:
 
 - **Chat tab** — pick an llm/vlm variant + device, Load, then multi-turn chat
   with SSE streaming, sampling params and token usage; VLM models can take

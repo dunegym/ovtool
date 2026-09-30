@@ -288,6 +288,9 @@ class Handler(BaseHTTPRequestHandler):
 
     models_dir: str = "./models"
     settings: dict = dict(DEFAULT_SETTINGS)
+    # when set (--api-key), every /api/* call needs 'Authorization: Bearer
+    # <key>'; the UI page itself stays public (static markup, no data)
+    api_key: str | None = None
     # knowledge bases + resident retrieval models (set by run_webui)
     kb: rag.KBStore
     retriever: rag.Retriever
@@ -314,6 +317,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         print(f"[webui] {self.address_string()} {fmt % args}", flush=True)
+
+    def _authorized(self, path: str) -> bool:
+        """Only /api/* is gated (the page, favicon and 404s stay public)."""
+        if not path.startswith("/api/") or not self.api_key:
+            return True
+        return self.headers.get("Authorization", "") == f"Bearer {self.api_key}"
 
     def _json(self, status: int, obj) -> None:
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -376,6 +385,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             path = self.path.split("?")[0]
+            if not self._authorized(path):
+                self._json(401, {"error": "Invalid or missing API key"})
+                return
             if path == "/":
                 data = WEBUI_HTML.read_bytes()
                 self.send_response(200)
@@ -421,6 +433,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             path = self.path.split("?")[0]
+            if not self._authorized(path):
+                self._json(401, {"error": "Invalid or missing API key"})
+                return
             body = self._read_json()
             if path == "/api/load":
                 self._load(body)
@@ -461,6 +476,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         try:
             path = self.path.split("?")[0]
+            if not self._authorized(path):
+                self._json(401, {"error": "Invalid or missing API key"})
+                return
             if path == "/api/roots":
                 self._remove_root(self._read_json())
             elif path == "/api/kb":
@@ -922,6 +940,7 @@ def _release() -> None:
 
 def run_webui(args: argparse.Namespace) -> None:
     Handler.models_dir = args.models_dir
+    Handler.api_key = args.api_key
     stored = load_settings()
     Handler.settings = {**DEFAULT_SETTINGS,
                         **{k: v for k, v in stored.items() if k != "roots"}}
@@ -938,6 +957,9 @@ def run_webui(args: argparse.Namespace) -> None:
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}"
     print(f"[ovtool] webui at {url}  (models dir: {args.models_dir})")
+    if args.api_key:
+        print("[ovtool] API key required on every /api call "
+              "(Authorization: Bearer <key>)")
     print(f"[ovtool] knowledge bases: {Path(args.kb_dir).resolve()}")
     print("[ovtool] press Ctrl+C to stop")
     try:
@@ -961,4 +983,8 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
                    help="Directory with <kind>/<model>/<variant>/ layout (default ./models)")
     p.add_argument("--kb-dir", default=str(rag.DEFAULT_KB_DIR),
                    help=f"Knowledge base storage (default {rag.DEFAULT_KB_DIR})")
+    p.add_argument("--api-key", default=None,
+                   help="If set, every /api call requires 'Authorization: Bearer "
+                        "<key>' — recommended whenever --host is not 127.0.0.1 "
+                        "(the web UI can read/write local paths)")
     p.set_defaults(func=run_webui)
