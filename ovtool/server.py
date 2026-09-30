@@ -67,7 +67,8 @@ def build_config(body: dict) -> ovgenai.GenerationConfig:
         _set(cfg, "rng_seed", int(body["seed"]))
     stop = body.get("stop")
     if stop:
-        cfg.stop_strings = [stop] if isinstance(stop, str) else [str(s) for s in stop]
+        # pybind wants Set[str], not list
+        cfg.stop_strings = {stop} if isinstance(stop, str) else {str(s) for s in stop}
     return cfg
 
 

@@ -38,7 +38,7 @@ def build_generation_config(args: argparse.Namespace) -> ovgenai.GenerationConfi
     if args.rng_seed is not None:
         cfg.rng_seed = args.rng_seed
     if args.stop_tokens:
-        cfg.stop_strings = args.stop_tokens
+        cfg.stop_strings = set(args.stop_tokens)  # pybind wants Set[str], not list
     return cfg
 
 

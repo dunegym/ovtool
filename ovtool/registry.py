@@ -46,6 +46,8 @@ def detect_quant(model_str: str) -> str:
     tokens = re.split(r"[\\/_\-. ]", model_str.lower())
     if "fp16" in tokens or "fp16" in model_str.lower():
         return "fp16"
+    if "fp32" in tokens or "fp32" in model_str.lower():
+        return "fp32"
     if "int8" in tokens or "int8" in model_str.lower():
         return "int8"
     if "awq" in tokens:

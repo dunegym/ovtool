@@ -775,11 +775,16 @@ class Handler(BaseHTTPRequestHandler):
         """Validated retrieval options of a chat/search request (None = off)."""
         if not isinstance(raw, dict) or not raw.get("kb"):
             return None
+
+        def num(key, cast, default):
+            v = raw.get(key)
+            return default if v is None else cast(v)  # 0 stays 0 and gets validated
+
         try:
             opts = {"kb": str(raw["kb"]),
-                    "top_k": int(raw.get("top_k") or 20),
-                    "top_n": int(raw.get("top_n") or 4),
-                    "min_score": float(raw.get("min_score") or 0.0),
+                    "top_k": num("top_k", int, 20),
+                    "top_n": num("top_n", int, 4),
+                    "min_score": num("min_score", float, 0.0),
                     "reranker": str(raw["reranker"]) if raw.get("reranker") else None,
                     "embed_device": str(raw.get("embed_device") or "CPU").strip().upper(),
                     "rerank_device": str(raw.get("rerank_device") or "CPU").strip().upper()}
