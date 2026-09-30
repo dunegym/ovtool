@@ -23,6 +23,20 @@ pip install "optimum-intel[openvino]" onnx   # conversion/quantization deps (or 
 
 After installation the command entry point is `ovtool` (equivalent to `python -m ovtool.cli`).
 
+## Testing
+
+```bash
+pip install -e ".[test]"
+pytest
+```
+
+The suite (~180 tests) exercises ovtool's own logic — registry gating, RAG
+chunking / storage / retrieval (with a stub embedder), text extraction,
+quant-config building, CLI wiring and the webui/serve handler plumbing — so
+it needs **no models and no GPU/NPU**. CI runs it on every push and pull
+request for Python 3.10 and 3.11 (`.github/workflows/ci.yml`); conversions
+that need `optimum-intel` are skipped automatically when the extra is absent.
+
 ## Docker
 
 A runtime image (~700MB, **no model weights, no torch/convert extras**) is published to GHCR:

@@ -21,6 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 convert = ["optimum-intel[openvino]>=1.20", "onnx", "diffusers", "transformers"]
+test = ["pytest>=8"]
 
 [project.scripts]
 ovtool = "ovtool.cli:main"
@@ -30,3 +31,6 @@ include = ["ovtool*"]
 
 [tool.setuptools.package-data]
 ovtool = ["registry.yaml", "webui.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

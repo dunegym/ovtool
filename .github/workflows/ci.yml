@@ -1,0 +1,28 @@
+name: ci
+
+# Unit tests: registry gating, RAG chunking/storage/retrieval with a stub
+# embedder, text extraction, HTTP handler plumbing — no models, no GPU/NPU.
+# Tests needing optimum-intel (quant-config building) skip themselves when
+# the convert extra is not installed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        python: ["3.10", "3.11"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - run: pip install ".[test]"
+
+      - run: pytest -q
