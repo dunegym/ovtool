@@ -3,9 +3,17 @@ official Qwen3-Reranker template."""
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
+
+import pytest
 
 from ovtool.embed import (QWEN3_QUERY_INSTRUCT, is_qwen3, qwen3_rerank_wrap,
-                          read_pooling)
+                          read_pooling, run_embed)
+
+
+def test_run_embed_requires_input():
+    with pytest.raises(SystemExit, match="nothing to embed"):
+        run_embed(SimpleNamespace(texts=[], query=None))
 
 
 def write_pooling(tmp_path, cfg):

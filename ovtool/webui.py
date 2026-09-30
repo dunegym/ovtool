@@ -41,7 +41,6 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
-import gc
 import io
 import json
 import threading
@@ -207,24 +206,13 @@ def _b64_png(tensor_or_result) -> list[str]:
 
 
 def _load_model(spec: dict) -> None:
-    """Worker for /api/load; updates SLOT from a background thread.
+    """Worker for /api/load; compiles the pipeline from a background thread.
 
-    The slot fields and the loading flag are claimed by the /api/load
-    dispatcher under load_lock; this thread only fills in the compiled
-    pipeline (a compile cannot be canceled, so nothing may reset the slot
-    underneath a running load)."""
+    The slot fields and the loading flag are owned by the /api/load
+    dispatcher (claimed under load_lock before this thread starts); this
+    worker only fills in the compiled pipeline (a compile cannot be
+    canceled, so nothing may reset the slot underneath a running load)."""
     try:
-        SLOT.path, SLOT.kind = spec["path"], spec["kind"]
-        SLOT.device = spec["device"]
-        if spec.get("devices"):
-            # surface the segmented placement immediately: NPU compilation
-            # can take minutes, during which the UI must not claim the
-            # whole pipeline runs on the device dropdown's value
-            SLOT.devices = [d.strip().upper() for d in spec["devices"]]
-            SLOT.geometry = {k: spec[k] for k in
-                             ("num_images", "width", "height", "guidance_scale")
-                             if k in spec}
-
         # registry gate before spending minutes on a compile
         fake_args = argparse.Namespace(
             model=spec["path"], device=spec["device"],
@@ -245,12 +233,6 @@ def _load_model(spec: dict) -> None:
                 guidance_scale=float(spec.get("guidance_scale", 7.5)),
                 opt=None, scheduler=None)
             pipe = imagegen._open_pipeline(ovgenai, geo_args, image_mode=False)
-            if not spec.get("devices"):
-                SLOT.device = spec["device"]
-            else:
-                SLOT.devices = [d.upper() for d in spec["devices"]]
-                SLOT.geometry = {k: geo_args.__dict__[k] for k in
-                                 ("num_images", "width", "height", "guidance_scale")}
         else:
             # NPU static prompt budget matches `ovtool chat` (16384). VLM's
             # CLI default is 1024, which four RAG passages overflow.
@@ -260,7 +242,6 @@ def _load_model(spec: dict) -> None:
                 if spec["kind"] == "llm" else \
                 open_vlm_pipeline(spec["path"], spec["device"],
                                   npu_prompt_len=16384)
-            SLOT.device = spec["device"]
 
         SLOT.pipe = pipe
         try:
@@ -530,7 +511,10 @@ class Handler(BaseHTTPRequestHandler):
             raise _ApiError(400, "repo must be a Hugging Face id like Qwen/Qwen3-0.6B")
         if endpoint not in ENDPOINTS:
             raise _ApiError(400, f"endpoint must be one of {', '.join(ENDPOINTS)}")
-        if Path(dest).exists() and any(Path(dest).iterdir()):
+        dest_path = Path(dest)
+        if dest_path.exists() and not dest_path.is_dir():
+            raise _ApiError(400, f"destination exists and is not a directory: {dest}")
+        if dest_path.is_dir() and any(dest_path.iterdir()):
             raise _ApiError(400, f"destination not empty: {dest}")
         with DOWNLOAD_LOCK:
             if DOWNLOAD["active"]:
@@ -639,6 +623,18 @@ class Handler(BaseHTTPRequestHandler):
             if SLOT.pipe is not None:
                 _release()  # switching models: drop the resident pipeline
             SLOT.loading = True  # claimed under the lock, before the thread
+            # publish the pending load now: the UI's first poll must not
+            # see a half-cleared slot rendered as "None:None"
+            SLOT.path, SLOT.kind = spec["path"], spec["kind"]
+            SLOT.device = spec["device"]
+            SLOT.error = None
+            if spec.get("devices"):
+                # segmented placement + static geometry, visible while the
+                # (possibly minutes-long) NPU compile runs
+                SLOT.devices = [d.strip().upper() for d in spec["devices"]]
+                SLOT.geometry = {k: spec[k] for k in
+                                 ("num_images", "width", "height", "guidance_scale")
+                                 if k in spec}
             try:
                 threading.Thread(target=_load_model, args=(spec,),
                                  daemon=True).start()
@@ -674,6 +670,14 @@ class Handler(BaseHTTPRequestHandler):
         if body.get("images"):
             if SLOT.kind != "vlm":
                 raise _ApiError(400, "image input requires a vlm model")
+            # registry text_only models are known-broken with images on this
+            # GenAI release — the same gate the CLI applies at load time
+            gate = argparse.Namespace(devices=None, image=["x"],
+                                      max_new_tokens=None, min_response_len=None)
+            errs = [i.message for i in registry_check(
+                "vlm", SLOT.path, SLOT.device, gate) if i.level == "error"]
+            if errs:
+                raise _ApiError(400, " | ".join(errs))
             import numpy as np
             from PIL import Image
             import openvino as ov
@@ -877,7 +881,8 @@ class Handler(BaseHTTPRequestHandler):
         opts = self._rag_options(body)
         if opts is None:
             raise _ApiError(400, "kb required")
-        query = str(body.get("query") or "").strip()
+        # same normalization as the chat path: /think switches skew scores
+        query = rag.retrieval_query(str(body.get("query") or "").strip())
         if not query:
             raise _ApiError(400, "query required")
         self._json(200, rag.search(self.kb, self.retriever, opts["kb"], query,

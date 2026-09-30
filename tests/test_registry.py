@@ -64,6 +64,19 @@ def test_registry_data_is_self_consistent():
             assert all(d == d.upper() for d in devices), (entry["id"], name)
 
 
+def test_registry_convert_examples_round_trip():
+    """The -o directory each recommended convert command produces must be
+    classified by detect_quant as exactly that variant (no WARN surprise)."""
+    import re
+    for entry in load()["models"]:
+        for name, v in entry.get("variants", {}).items():
+            m = re.search(r"-o (\S+)", v.get("convert", ""))
+            if not m:
+                continue
+            out = m.group(1)
+            assert detect_quant(out) == name, (entry["id"], name, out)
+
+
 def test_find_entry_matches_and_ordering():
     assert find_entry("models/vlm/gemma-4-E2B-it/int8")["id"] == "google/gemma-4-E2B-it"
     assert find_entry("models/embed/Qwen3-Embedding-0.6B/int8")["id"] == \
@@ -122,10 +135,21 @@ def test_llm_asym_on_npu_requires_sym():
     assert any("symmetric" in m for m in errs)
 
 
-def test_unknown_model_skips_checks():
+def test_unknown_model_skips_variant_checks():
     issues = check("llm", "models/llm/Unknown-9B/int4-sym", "NPU", ns())
     assert not errors(issues)
     assert any("not in built-in registry" in i.message for i in issues)
+
+
+def test_unknown_model_still_hits_global_rules():
+    """Global device rules (NPU bans, quant requirements) apply even to
+    models the registry has never heard of."""
+    errs = errors(check("tts", "models/tts/SomeUnknownTts/fp16", "NPU", ns()))
+    assert any("TTS pipelines on NPU" in m for m in errs)
+    errs = errors(check("image", "models/image/UnknownDiffusion/int8", "NPU", ns()))
+    assert any("segmented" in m for m in errs)
+    # a compliant unknown LLM variant still passes
+    assert not errors(check("llm", "models/llm/Unknown-9B/int4-sym-g128", "NPU", ns()))
 
 
 def test_image_whole_pipeline_on_npu_blocked():
@@ -179,8 +203,9 @@ def test_auto_meta_device_passes():
 def test_llm_npu_max_new_tokens_over_budget_warns():
     issues = check("llm", QWEN_SYM, "NPU", ns(max_new_tokens=512))
     assert not errors(issues)
-    assert any("exceeds the NPU static budget" in i.message
-               for i in issues if i.level == "warn")
+    warn = next(i.message for i in issues if i.level == "warn")
+    assert "exceeds the NPU static budget" in warn
+    assert "256" in warn          # the real llm.py default, not the stale 128
 
 
 # ---------------- local discovery ---------------- #

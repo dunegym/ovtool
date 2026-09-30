@@ -22,6 +22,12 @@ REGISTRY_PATH = Path(__file__).parent / "registry.yaml"
 MODELS_PATH_ENV = "OVTOOL_MODELS_PATH"
 DEFAULT_MODELS_DIR = "./models"
 
+# NPU static-shape budget llm.py applies when the user passes no explicit
+# --max-prompt-len / --min-response-len; kept here so the gate and the
+# pipeline builder cannot drift apart
+NPU_DEFAULT_PROMPT_LEN = 16384
+NPU_DEFAULT_MIN_RESPONSE = 256
+
 OK, WARN, ERROR = "ok", "warn", "error"
 
 
@@ -70,52 +76,53 @@ def find_entry(model_str: str) -> dict | None:
 
 
 def check(kind: str, model_str: str, device: str, args: argparse.Namespace) -> list[Issue]:
-    """Validate an inference request against the registry."""
+    """Validate an inference request against the registry.
+
+    Global device rules (registry.yaml global_rules) apply to every model,
+    registered or not; variant- and entry-specific checks need a match."""
     issues: list[Issue] = []
     entry = find_entry(model_str)
     dev = normalize_device(device)
-
-    global_rules = load().get("global_rules", []) if entry else []
+    global_rules = load().get("global_rules", [])
 
     # segmented per-component execution (--devices TE,DENOISE,VAE): text
     # encoder + denoiser may run on the NPU while VAE decode stays on GPU
     seg = [d.strip().upper().split(":")[0].split(".")[0]
            for d in (getattr(args, "devices", "") or "").split(",") if d.strip()]
     segmented = kind == "image" and len(seg) == 3
+    quant = detect_quant(model_str)
 
     if entry is None:
-        if kind in ("llm", "vlm", "image", "tts", "embed", "rerank"):
-            issues.append(Issue(OK, "model not in built-in registry; skipping compatibility checks"))
-        return issues
-
-    quant = detect_quant(model_str)
-    variants = entry.get("variants", {})
-
-    # 1) known quantization variants
-    if quant not in variants and variants:
         issues.append(Issue(
-            WARN,
-            f"quantization variant '{quant}' is not in the registry for {entry['id']}; "
-            f"known variants: {', '.join(variants)}"))
+            OK, "model not in built-in registry; applying global device rules only"))
+    else:
+        variants = entry.get("variants", {})
 
-    # 2) devices allowed for the detected variant (fall back to union);
-    #    segmented mode places components individually, so the whole-model
-    #    device list does not apply
-    allowed: set[str] = set()
-    for v in variants.values():
-        allowed.update(d.upper() for d in v.get("devices", []))
-    if allowed and dev not in allowed and dev not in ("AUTO", "HETERO", "MULTI", "BATCH") \
-            and not segmented:
-        hints = []
-        for name, v in variants.items():
-            if dev in [d.upper() for d in v.get("devices", [])]:
-                hints.append(f"'{name}' ({', '.join(v['devices'])})")
-        msg = f"{entry['id']} on {dev} is not a verified combination for variant '{quant}'."
-        if hints:
-            msg += f" Verified {dev} variants: {'; '.join(hints)}."
-        issues.append(Issue(ERROR, msg))
+        # 1) known quantization variants
+        if quant not in variants and variants:
+            issues.append(Issue(
+                WARN,
+                f"quantization variant '{quant}' is not in the registry for {entry['id']}; "
+                f"known variants: {', '.join(variants)}"))
 
-    # 3) global device/kind/quant rules
+        # 2) devices allowed for the detected variant (fall back to union);
+        #    segmented mode places components individually, so the whole-model
+        #    device list does not apply
+        allowed: set[str] = set()
+        for v in variants.values():
+            allowed.update(d.upper() for d in v.get("devices", []))
+        if allowed and dev not in allowed and dev not in ("AUTO", "HETERO", "MULTI", "BATCH") \
+                and not segmented:
+            hints = []
+            for name, v in variants.items():
+                if dev in [d.upper() for d in v.get("devices", [])]:
+                    hints.append(f"'{name}' ({', '.join(v['devices'])})")
+            msg = f"{entry['id']} on {dev} is not a verified combination for variant '{quant}'."
+            if hints:
+                msg += f" Verified {dev} variants: {'; '.join(hints)}."
+            issues.append(Issue(ERROR, msg))
+
+    # 3) global device/kind/quant rules — every model, known or not
     for rule in global_rules:
         if rule.get("when_device") != dev:
             continue
@@ -136,6 +143,9 @@ def check(kind: str, model_str: str, device: str, args: argparse.Namespace) -> l
             WARN, "VAE decode on NPU is not supported by the runtime; keep the "
                   "third --devices entry on GPU or CPU"))
 
+    if entry is None:
+        return issues
+
     # 4) entry-specific rules
     if entry.get("text_only") and kind == "vlm" and getattr(args, "image", None):
         issues.append(Issue(
@@ -145,7 +155,7 @@ def check(kind: str, model_str: str, device: str, args: argparse.Namespace) -> l
 
     if dev == "NPU" and kind == "llm":
         # keep the static response budget consistent with the requested tokens
-        min_resp = getattr(args, "min_response_len", None) or 128
+        min_resp = getattr(args, "min_response_len", None) or NPU_DEFAULT_MIN_RESPONSE
         max_new = getattr(args, "max_new_tokens", None)
         if max_new and max_new > min_resp:
             issues.append(Issue(

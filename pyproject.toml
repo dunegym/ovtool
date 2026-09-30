@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ovtool"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Comprehensive OpenVINO GenAI command-line tool: LLM/VLM inference, image generation, model conversion and quantization"
 requires-python = ">=3.10"
 dependencies = [
@@ -14,6 +14,7 @@ dependencies = [
     "numpy",
     "pillow",
     "huggingface_hub",
+    "pyyaml>=6",
     "sentencepiece",
     "tiktoken",
     "pypdf",
@@ -31,6 +32,9 @@ include = ["ovtool*"]
 
 [tool.setuptools.package-data]
 ovtool = ["registry.yaml", "webui.html"]
+
+[tool.setuptools.dynamic]
+version = {attr = "ovtool.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

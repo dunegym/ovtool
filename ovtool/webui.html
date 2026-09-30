@@ -1145,7 +1145,7 @@ async function send(ev) {
   if (!text) return;
   $("chat-input").value = "";
   const imgs = attachedImages; attachedImages = [];
-  addMsg("user", text, imgs.length ? imgs.map(b64ToThumb) : undefined);
+  addMsg("user", text, imgs.length ? imgs : undefined);
   history.push({ role: "user", content: text });
   const params = { max_tokens: +$("p-max").value || 512 };
   if ($("p-temp").value !== "") params.temperature = +$("p-temp").value;
@@ -1193,7 +1193,6 @@ async function send(ev) {
     if (kb) refreshRetrieval();
   }
 }
-function b64ToThumb(src) { return src; }
 $("btn-send").onclick = send;
 $("chat-input").onkeydown = (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!generating) send(); }

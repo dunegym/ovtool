@@ -98,6 +98,8 @@ def run_embed(args: argparse.Namespace) -> None:
     from .devices import resolve_device
     from .llm import compile_options
 
+    if not args.texts and not args.query:
+        raise SystemExit("nothing to embed: pass one or more texts, or --query")
     device = resolve_device(args.device)
     auto_pool = read_pooling(args.model)
     qwen3 = is_qwen3(args.model)

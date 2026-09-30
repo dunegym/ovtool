@@ -4,12 +4,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-TASKS = {
-    "llm": "text-generation-with-past",
-    "vlm": "image-text-to-text",
-    "image": "text-to-image",
-}
-
 # int4 format shorthands -> (symmetric, group_size); group_size<=0 means per-channel
 INT4_PRESETS = {
     "int4": (False, 128),

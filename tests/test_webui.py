@@ -318,3 +318,109 @@ def test_no_api_key_means_open(tmp_path):
         assert status == 200                        # default: no auth required
     finally:
         httpd.shutdown()
+
+
+# ---------------- text_only VLM image gating ---------------- #
+
+# a real 1x1 transparent PNG (the handler decodes attachments)
+PNG_1PX = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcS"
+           "JAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+
+def test_chat_image_input_blocked_for_text_only_models(make_model_dir):
+    """Qwen3-VL is flagged text_only (image input broken on this GenAI
+    release); the webui chat must refuse images up front like the CLI."""
+    make_model_dir("vlm", name="models/vlm/Qwen3-VL-2B/int4")
+    W.SLOT.pipe = object()
+    W.SLOT.kind = "vlm"
+    W.SLOT.path = "models/vlm/Qwen3-VL-2B/int4"
+    W.SLOT.device = "GPU"
+    with pytest.raises(W._ApiError) as ei:
+        RecordingHandler()._chat({
+            "messages": [{"role": "user", "content": "look"}],
+            "stream": False,
+            "images": [PNG_1PX]})
+    assert ei.value.status == 400
+    assert "image input" in ei.value.message
+
+
+def test_chat_image_input_ok_for_vlm_without_text_only_flag(make_model_dir):
+    make_model_dir("vlm", name="models/vlm/gemma-4-E2B-it/int8")
+    W.SLOT.kind = "vlm"
+    W.SLOT.path = "models/vlm/gemma-4-E2B-it/int8"
+    W.SLOT.device = "GPU"
+    W.SLOT.tokenizer = None
+    # the gate passes; generation itself would run (BoomPipe proves we got
+    # past the registry check)
+    class Boom:
+        def generate(self, *a, **k):
+            raise RuntimeError("past the gate")
+
+    W.SLOT.pipe = Boom()
+    with pytest.raises(W._ApiError) as ei:
+        RecordingHandler()._chat({
+            "messages": [{"role": "user", "content": "look"}],
+            "stream": False, "think": True,
+            "images": [PNG_1PX]})
+    assert "generation failed" in ei.value.message   # not the registry 400
+
+
+# ---------------- misc handler validations ---------------- #
+
+def test_download_dest_must_be_a_directory(tmp_path):
+    a_file = tmp_path / "occupied.txt"
+    a_file.write_text("x", encoding="utf-8")
+    h = RecordingHandler()
+    with pytest.raises(W._ApiError) as ei:
+        h._start_download({"repo": "Qwen/Qwen3-0.6B", "dest": str(a_file)})
+    assert ei.value.status == 400 and "not a directory" in ei.value.message
+    # an empty directory is still fine; a non-empty one is not
+    (tmp_path / "empty-dir").mkdir()
+    h2 = RecordingHandler()
+    with pytest.raises(W._ApiError) as ei:
+        h2._start_download({"repo": "Qwen/Qwen3-0.6B",
+                            "dest": str(tmp_path)})    # tmp_path is non-empty
+    assert "not empty" in ei.value.message
+
+
+def test_load_publishes_slot_before_thread_runs(tmp_path, monkeypatch, make_model_dir):
+    """path/kind/device must be visible the instant /api/load answers, not
+    only once the worker thread gets scheduled (the UI's first poll)."""
+    make_model_dir("llm", name="models/llm/M/int4")
+
+    class NoStart:               # keep _load_model from running
+        def __init__(self, *a, **k):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(W.threading, "Thread", NoStart)
+    h = RecordingHandler()
+    model_dir = str(tmp_path / "models" / "llm" / "M" / "int4")
+    h._load({"path": model_dir, "kind": "llm", "device": "cpu"})
+    d = W.SLOT.describe()
+    assert d["loading"] is True
+    assert d["kind"] == "llm" and d["name"] == "int4"
+    assert d["device"] == "CPU" and d["error"] is None  # normalized upper
+    assert h.json[-1] == (200, {"started": True})
+
+
+def test_kb_search_strips_think_switches(kb_factory, monkeypatch):
+    """The Knowledge tab preview normalizes the query like the chat path."""
+    from ovtool import rag
+    store, kb = kb_factory([("alpha.txt", "alpha material")])
+    captured = {}
+
+    def fake_search(store_, retr_, kb_id, query, **kw):
+        captured["query"] = query
+        return {"kb": {"id": kb_id, "name": "test"}, "query": query,
+                "embedder": "e", "reranker": None, "hits": [],
+                "candidates": [], "best": None, "timings": {}}
+
+    monkeypatch.setattr(rag, "search", fake_search)
+    h = RecordingHandler()
+    h.kb = store
+    h.retriever = object()
+    h._kb_search({"kb": kb.id, "query": "alpha /think"})
+    assert captured["query"] == "alpha"

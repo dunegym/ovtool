@@ -254,7 +254,7 @@ models:
         note: NPU segmented execution verified (--devices NPU,NPU,GPU; 4-step 512px ~12s warm cache)
       int4-g64:
         devices: [GPU, CPU, AUTO]
-        convert: "ovtool convert image stabilityai/sd-turbo -o ./sd-turbo-int4 --weight-format int4 --group-size 64"
+        convert: "ovtool convert image stabilityai/sd-turbo -o ./sd-turbo-int4-g64 --weight-format int4 --group-size 64"
         note: group 64 required — UNet channel size 320 is not divisible by 128; NPU segmented load not possible (int4 UNet fails Level0 compilation) — use int8 for --devices NPU,...
 
   - id: SimianLuo/LCM_Dreamshaper_v7
@@ -268,7 +268,7 @@ models:
         note: LCM-distilled, 8 steps suffice — 512px ~19s on iGPU
       int4-g64:
         devices: [GPU, CPU, AUTO]
-        convert: "ovtool convert image SimianLuo/LCM_Dreamshaper_v7 -o ./lcm-dreamshaper-int4 --weight-format int4 --group-size 64"
+        convert: "ovtool convert image SimianLuo/LCM_Dreamshaper_v7 -o ./lcm-dreamshaper-int4-g64 --weight-format int4 --group-size 64"
         note: group 64 required — UNet channel size 320 is not divisible by 128
 
   - id: stable-diffusion-v1-5/stable-diffusion-v1-5
@@ -282,7 +282,7 @@ models:
         note: 'classic SD1.5 base — 20-step 512px ~47s on iGPU; NPU segmented verified (first compile ~105s, then cached)'
       int4-g64:
         devices: [GPU, CPU, AUTO]
-        convert: "ovtool convert image stable-diffusion-v1-5/stable-diffusion-v1-5 -o ./sd15-int4 --weight-format int4 --group-size 64"
+        convert: "ovtool convert image stable-diffusion-v1-5/stable-diffusion-v1-5 -o ./sd15-int4-g64 --weight-format int4 --group-size 64"
         note: group 64 required — UNet channel size 320 is not divisible by 128
 
   - id: segmind/SSD-1B
@@ -296,7 +296,7 @@ models:
         note: 'SDXL-distilled, native 1024px — 25-step ~89s on iGPU; needs the dual-tokenizer export; NPU segmented verified (blob cache resumes interrupted compiles)'
       int4-g64:
         devices: [GPU, CPU, AUTO]
-        convert: "ovtool convert image segmind/SSD-1B -o ./ssd1b-int4 --weight-format int4 --group-size 64"
+        convert: "ovtool convert image segmind/SSD-1B -o ./ssd1b-int4-g64 --weight-format int4 --group-size 64"
         note: group 64 required — UNet channel size 320 is not divisible by 128
 
   - id: stabilityai/stable-diffusion-3.5-medium
@@ -310,7 +310,7 @@ models:
         note: 'MMDiT (2.5B) + T5-XXL encoder; gated repo — accept the license on the model page first; 1024px/28 steps ~3m22s on iGPU; needs the triple-tokenizer export; NPU segmented verified (first compile ~10.6 min — do not interrupt, blob cache resumes)'
       int4-g64:
         devices: [GPU, CPU, AUTO]
-        convert: "ovtool convert image stabilityai/stable-diffusion-3.5-medium -o ./sd35m-int4 --weight-format int4 --group-size 64"
+        convert: "ovtool convert image stabilityai/stable-diffusion-3.5-medium -o ./sd35m-int4-g64 --weight-format int4 --group-size 64"
         note: 1024px/28 steps ~3m36s on iGPU
 
   - id: black-forest-labs/FLUX.2-klein-4B
@@ -324,7 +324,7 @@ models:
         note: 'distilled (8 steps), Apache-2.0; Qwen3 text encoder; 1024px/8 steps ~2m06s on iGPU; needs optimum-intel>=2.2.0; NPU segmented verified (first compile ~12.7 min for the 4B denoiser — do not interrupt, blob cache resumes)'
       int4-g64:
         devices: [GPU, CPU, AUTO]
-        convert: "ovtool convert image black-forest-labs/FLUX.2-klein-4B -o ./flux2k-int4 --weight-format int4 --group-size 64"
+        convert: "ovtool convert image black-forest-labs/FLUX.2-klein-4B -o ./flux2k-int4-g64 --weight-format int4 --group-size 64"
         note: '1024px/8 steps ~2m13s on iGPU; int4 NPU segmented load not possible (int4 graphs fail Level0 compilation, same as other image models) — use int8 for --devices NPU,...; first int8 segmented NPU compile of the 4B denoiser takes several minutes and the blob cache resumes interrupted compiles'
 
   - id: microsoft/speecht5_tts

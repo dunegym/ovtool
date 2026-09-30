@@ -6,6 +6,8 @@ import argparse
 import openvino_genai as ovgenai
 import openvino_tokenizers  # noqa: F401  (registers custom-op extension)
 
+from .registry import NPU_DEFAULT_MIN_RESPONSE, NPU_DEFAULT_PROMPT_LEN
+
 
 def make_streamer(stream: bool):
     """Return a streamer callback; openvino_genai (2024.5+) calls it with each
@@ -78,7 +80,8 @@ def open_llm_pipeline(model_dir: str, device: str, opts: dict | None = None,
     # NPU executes LLMs with static shapes; the prompt/response budget must be
     # fixed at compile time via device properties
     if device.upper().startswith("NPU"):
-        max_prompt, min_response = npu_shape or (16384, 256)
+        max_prompt, min_response = npu_shape or (NPU_DEFAULT_PROMPT_LEN,
+                                                 NPU_DEFAULT_MIN_RESPONSE)
         opts.setdefault("MAX_PROMPT_LEN", int(max_prompt))
         opts.setdefault("MIN_RESPONSE_LEN", int(min_response))
         opts.setdefault("PERFORMANCE_HINT", "LATENCY")
@@ -87,7 +90,8 @@ def open_llm_pipeline(model_dir: str, device: str, opts: dict | None = None,
 
 def _npu_shape_from_args(args: argparse.Namespace):
     if getattr(args, "max_prompt_len", None) or getattr(args, "min_response_len", None):
-        return (args.max_prompt_len or 16384, args.min_response_len or 256)
+        return (args.max_prompt_len or NPU_DEFAULT_PROMPT_LEN,
+                args.min_response_len or NPU_DEFAULT_MIN_RESPONSE)
     return None
 
 

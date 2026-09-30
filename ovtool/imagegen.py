@@ -36,7 +36,8 @@ def _save_images(result, out_dir: Path, prefix: str) -> list[str]:
 
 def _common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("-m", "--model", required=True, help="Model directory (OpenVINO IR from 'convert image')")
-    p.add_argument("-d", "--device", default="GPU", help="Inference device (default GPU;扩散模型推荐 GPU)")
+    p.add_argument("-d", "--device", default="GPU",
+                   help="Inference device (default GPU; diffusion models run best on GPU)")
     p.add_argument("--width", type=int, default=512)
     p.add_argument("--height", type=int, default=512)
     p.add_argument("--steps", type=int, default=20, help="num_inference_steps (default 20)")
@@ -57,13 +58,9 @@ def _common_args(p: argparse.ArgumentParser) -> None:
 
 def _open_pipeline(ovgenai, args, image_mode: bool):
     from .devices import resolve_device
+    from .llm import compile_options  # one shared --opt KEY=VALUE parser
     device = resolve_device(args.device)
-    opts = {}
-    for kv in args.opt or []:
-        if "=" not in kv:
-            raise SystemExit(f"--opt expects KEY=VALUE, got: {kv}")
-        k, v = kv.split("=", 1)
-        opts[k] = int(v) if v.isdigit() else v
+    opts = compile_options(args)
 
     cls = ovgenai.Image2ImagePipeline if image_mode else ovgenai.Text2ImagePipeline
 
