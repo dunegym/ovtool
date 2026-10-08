@@ -332,6 +332,20 @@ model verbatim, so without the template the scores are near-random).
 4B (both in the [models repo](https://huggingface.co/dunegym/openvino-models),
 each embedder fp16/int8 and reranker int4/int8).
 
+**Multimodal (VL) embedders**: `Qwen/Qwen3-VL-Embedding-2B` runs through the
+same `ovtool embed` command — `-i/--image` (repeatable) embeds images next to
+texts and one `--query` ranks them together:
+
+```bash
+ovtool embed -m models/embed/Qwen3-VL-Embedding-2B/fp16 \
+    --query "a dog surfing on a wave" \
+    "a cat sitting on furniture indoors" \
+    -i beach_dog.png -i sofa_cat.jpg
+```
+
+The export currently needs a pinned optimum-intel commit (see known
+limitations #7/#8); `Qwen3-VL-Reranker` has no GenAI pipeline yet (#7).
+
 ### `ovtool image` / `ovtool image2image` (Diffusion)
 
 ```bash
@@ -416,6 +430,7 @@ ovtool/
 - **Qwen3-Reranker-0.6B** (int4 via `convert llm`): ✅ official yes/no template auto-applied — P(yes) 0.986/0.969 for relevant en/zh docs vs 0.010 irrelevant (raw query+doc without the template scores near-random; never bypass it)
 - **Qwen3-Embedding-4B** (fp16 + int8 via `convert embed`, 2560-dim): ✅ int8 cosine ranking matches fp16 (relevant 0.73 vs irrelevant 0.24–0.31); LAST_TOKEN pooling auto-applied; CPU + iGPU
 - **Qwen3-Reranker-4B** (int4 + int8 via `convert llm`): ✅ P(yes) 0.999 relevant vs ≤0.003 irrelevant, en+zh queries, CPU + iGPU
+- **Qwen3-VL-Embedding-2B** (fp16 + int8, multimodal): ✅ `EmbeddingPipeline` text+image in one 2048-dim space — text-text 0.76 vs 0.23, cross-modal 2×2 diagonal-dominant (dog query→corgi image 0.76 / cat image 0.22; cat query→cat image 0.62 / corgi image 0.22); int8 matches fp16; `ovtool embed -i` mixes texts and images in one ranking; CPU + iGPU
 - **google/gemma-4-E2B-it** (VLM, effective-2B MatFormer with per-layer embeddings, full five-variant ladder): ✅ text (en+zh) and **image input** verified on int4-asym-g128 — ~26 tok/s CPU, ~20 tok/s GPU with 0.5s TTFT; the repo's own `chat_template.jinja` (tool-calling capable) renders fine in GenAI
 - The `vlm` multimodal path is implemented per the official openvino-genai API; image+text inference was not verified end-to-end (see known limitations)
 
@@ -427,6 +442,8 @@ ovtool/
 4. **optimum version guards**: optimum-intel 2.1.0 pins stale `MAX_TRANSFORMERS_VERSION` values on newer architectures such as qwen3-vl/qwen2-vl; `convert vlm` relaxes them automatically (`_relax_stale_version_guards`). qwen3_5 additionally requires transformers==5.2.x (5.3+ removed `Qwen3_5DynamicCache`, while optimum pins `<5.6`; 5.2 satisfies both).
 5. **TTS scope of the current GenAI release** (2026.3.1): only SpeechT5 and Kokoro-82M are supported by `Text2SpeechPipeline` — **Qwen3-TTS is not** (community OpenVINO conversions exist on HF but do not run through GenAI). Kokoro zh/ja voices ship in the pack but are not supported end-to-end (G2P); non-English languages (es/fr-fr/hi/it/pt-br) require espeak-ng installed.
 6. **Gemma-4 base models ship no chat template**: `google/gemma-4-E2B` (base) carries none in any file and transformers has no Gemma4 default — GenAI chat/VLM inference then fails with `chat_template.empty()`. The `-it` sibling repo has `chat_template.jinja`; `convert vlm` warns when the export lacks a template. The base model is also not instruction-aligned (repeats itself, blank image descriptions) and is therefore not shipped in the models repo — use `-it`.
+7. **Qwen3-VL-Reranker has no GenAI pipeline** (measured 2026-10): rerank support in openvino-genai is text-only (`TextRerankPipeline`); the multimodal `EmbeddingPipeline` covers Qwen3-VL-**Embedding** but there is no VL rerank counterpart in 2026.3.1/2026.4.1 (architecture tables list `Qwen3VLModel` under embeddings only). The official OpenVINO notebook for Qwen3-VL-Reranker runs it through a **forked optimum-intel branch** (`openvino-dev-samples/optimum-intel@qwen3vl-reranker`) with a hand-written yes/no-logits scorer over `OVModelForVisualCausalLM` — not a GenAI pipeline, and not wired into ovtool. Re-evaluate when GenAI ships a multimodal rerank pipeline.
+8. **Qwen3-VL-Embedding export needs a pinned optimum commit** (2026-10): the optimum-intel **2.2.0 release** bakes the dummy-tracing sequence length into the language-model graph (runtime `reshape` error `(1,N,2048) vs pattern` for any N); the export works with the notebook-pinned commit `f48d93fd` + `transformers==5.0`. The exported IR then runs on any OpenVINO ≥ 2026.3 — only the *conversion* environment is pinned; inference is unaffected. `ovtool convert embed` copies the `preprocessor_config.json` / `video_preprocessor_config.json` the multimodal pipeline needs.
 
 ## Implementation Notes (lessons learned)
 

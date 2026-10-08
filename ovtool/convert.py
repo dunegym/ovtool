@@ -113,16 +113,22 @@ def _copy_pooling_config(args: argparse.Namespace, out: Path) -> None:
     """Preserve the sentence-transformers pooling config next to the export.
 
     openvino-genai does not auto-detect pooling; 'ovtool embed' reads this
-    file (pooling_mode_cls / pooling_mode_mean) and applies it."""
+    file (pooling_mode_cls / pooling_mode_mean) and applies it. Multimodal
+    (VL) embedders additionally need their image/video preprocessor configs,
+    which EmbeddingPipeline reads for image inputs."""
     import shutil
 
-    src = Path(args.model) / POOLING_LOCAL if Path(args.model).is_dir() else None
-    if src is None or not src.is_file():
+    def fetch(name):
+        local = Path(args.model) / name if Path(args.model).is_dir() else None
+        if local is not None and local.is_file():
+            return local
         try:
             from huggingface_hub import hf_hub_download
-            src = Path(hf_hub_download(args.model, POOLING_LOCAL))
+            return Path(hf_hub_download(args.model, name))
         except Exception:
-            src = None
+            return None
+
+    src = fetch(POOLING_LOCAL)
     if src is not None and src.is_file():
         dst = out / POOLING_LOCAL
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -131,6 +137,11 @@ def _copy_pooling_config(args: argparse.Namespace, out: Path) -> None:
     else:
         print("No sentence-transformers 1_Pooling config found; 'ovtool embed' "
               "defaults to MEAN pooling (override with --pooling).")
+    for pre in ("preprocessor_config.json", "video_preprocessor_config.json"):
+        src = fetch(pre)
+        if src is not None and src.is_file():
+            shutil.copy2(src, out / pre)
+            print(f"Preprocessor config copied ({pre}).")
 
 
 def _compress_fp16_ir(xmls) -> None:
@@ -358,7 +369,7 @@ def _relax_stale_version_guards() -> None:
 
 
 def run_convert(args: argparse.Namespace) -> None:
-    if args.kind in ("vlm",):
+    if args.kind in ("vlm", "embed"):
         _relax_stale_version_guards()
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)

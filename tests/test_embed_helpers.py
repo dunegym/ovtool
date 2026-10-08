@@ -7,13 +7,24 @@ from types import SimpleNamespace
 
 import pytest
 
-from ovtool.embed import (QWEN3_QUERY_INSTRUCT, is_qwen3, qwen3_rerank_wrap,
-                          read_pooling, run_embed)
+from ovtool.embed import (QWEN3_QUERY_INSTRUCT, is_multimodal_export, is_qwen3,
+                          qwen3_rerank_wrap, read_pooling, run_embed)
 
 
 def test_run_embed_requires_input():
     with pytest.raises(SystemExit, match="nothing to embed"):
-        run_embed(SimpleNamespace(texts=[], query=None))
+        run_embed(SimpleNamespace(texts=[], query=None, image=None))
+
+
+def test_is_multimodal_export(tmp_path):
+    text_only = tmp_path / "text-embedder"
+    text_only.mkdir()
+    (text_only / "openvino_model.xml").write_text("<net/>", encoding="utf-8")
+    vl = tmp_path / "vl-embedder"
+    vl.mkdir()
+    (vl / "openvino_vision_embeddings_model.xml").write_text("<net/>", encoding="utf-8")
+    assert not is_multimodal_export(str(text_only))
+    assert is_multimodal_export(str(vl))
 
 
 def write_pooling(tmp_path, cfg):

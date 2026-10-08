@@ -101,6 +101,13 @@ def test_find_entry_prefers_size_specific_entry():
         "Qwen/Qwen3-Reranker-0.6B"
 
 
+def test_find_entry_vl_embedding_and_vl_chat_do_not_collide():
+    assert find_entry("models/embed/Qwen3-VL-Embedding-2B/fp16")["id"] == \
+        "Qwen/Qwen3-VL-Embedding-2B"
+    assert find_entry("models/vlm/Qwen3-VL-2B-Instruct/int4-sym-g128")["id"] == \
+        "Qwen/Qwen3-VL-2B-Instruct"
+
+
 # ---------------- detect_kind on fabricated directories ---------------- #
 
 @pytest.mark.parametrize("kind,want", [
@@ -118,6 +125,18 @@ def test_detect_kind_kokoro_by_voices_dir(tmp_path):
     (d / "voices").mkdir()
     (d / "voices" / "af_heart.bin").write_bytes(b"\0" * 4)
     assert detect_kind(d) == "tts"
+
+
+def test_detect_kind_vl_embedder_is_embed_not_vlm(tmp_path):
+    """A VL embedder export (e.g. Qwen3-VL-Embedding) has the same vision
+    component IRs as a VLM, but ships the 1_Pooling config."""
+    vl_chat = make_model(tmp_path / "vl-chat", "vlm")
+    vl_emb = make_model(tmp_path / "vl-embed", "vlm")
+    (vl_emb / "1_Pooling").mkdir()
+    (vl_emb / "1_Pooling" / "config.json").write_text(
+        '{"pooling_mode_lasttoken": true}', encoding="utf-8")
+    assert detect_kind(vl_chat) == "vlm"
+    assert detect_kind(vl_emb) == "embed"
 
 
 def test_detect_kind_qwen3_embed_and_rerank_by_path_hint(tmp_path):

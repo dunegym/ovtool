@@ -400,6 +400,19 @@ models:
         convert: "ovtool convert vlm google/gemma-4-E2B-it -o ./gemma4-e2b-it-fp16 --weight-format fp16"
 
 
+  - id: Qwen/Qwen3-VL-Embedding-2B
+    kind: embed
+    match: ["qwen3-vl-embedding", "qwen3vl-emb"]
+    variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed Qwen/Qwen3-VL-Embedding-2B --weight-format fp16 -o ./qwen3vl-emb-2b-fp16"
+        note: '2048-dim multimodal (text+image+video) embedder via EmbeddingPipeline; ovtool embed -i <img> ranks images and texts in one space — export currently needs optimum-intel commit f48d93fd + transformers 5.0 (the 2.2.0 release bakes dummy-shape constants into the graph)'
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed Qwen/Qwen3-VL-Embedding-2B --weight-format int8 -o ./qwen3vl-emb-2b-int8"
+        note: int8 cross-modal ranking matches fp16; not bit-compatible — index and queries must use the same variant
+
   - id: Qwen/Qwen3-Embedding-4B
     kind: embed
     match: ["qwen3-embedding-4b", "qwen3-emb-4b"]

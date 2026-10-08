@@ -71,6 +71,21 @@ def _pooling_enum(ovgenai, name: str):
             "last_token": ovgenai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN}[name]
 
 
+def is_multimodal_export(model_dir: str) -> bool:
+    """A multimodal (VL) embedder export carries the vision components of the
+    Qwen3-VL layout plus the sentence-transformers pooling config."""
+    return (Path(model_dir) / "openvino_vision_embeddings_model.xml").is_file()
+
+
+def _image_tensor(path: str):
+    """PIL image -> NHWC uint8 ov.Tensor for EmbeddingPipeline."""
+    import openvino as ov
+    from PIL import Image
+
+    img = Image.open(path).convert("RGB")
+    return ov.Tensor(np.asarray(img)[None, ...])
+
+
 def _embed_config(ovgenai, args: argparse.Namespace, auto_pool: str | None):
     cfg = ovgenai.TextEmbeddingPipeline.Config()
     pooling = args.pooling or auto_pool
@@ -92,15 +107,76 @@ def _preview(v: np.ndarray) -> str:
     return "[" + ", ".join(f"{x:.4f}" for x in v[:4]) + ", ...]"
 
 
+def _run_embed_multimodal(ovgenai, args: argparse.Namespace, device: str,
+                          pooling_name: str) -> None:
+    """Multimodal (VL) embedders via openvino_genai.EmbeddingPipeline: texts
+    and images embed into one shared space, so retrieval ranks them together."""
+    print(f"[ovtool] multimodal embedding model {args.model} on {device} "
+          f"(pooling: {pooling_name}) ...")
+    pipe = ovgenai.EmbeddingPipeline(
+        args.model, device, pooling_type=_pooling_enum(ovgenai, pooling_name),
+        normalize=True)
+
+    def embed_item(text=None, image=None):
+        if image is not None:
+            result = pipe.embed("", [_image_tensor(image)])
+        else:
+            result = pipe.embed(text or "")
+        return np.asarray(result.embeddings.data, dtype=np.float32).reshape(-1)
+
+    docs = [("text", t) for t in (args.texts or [])] + \
+           [("image", p) for p in (args.image or [])]
+    labels = [d[1] for d in docs]
+
+    if args.query and docs:
+        # retrieval mode: rank texts + images by cosine to the text query
+        q = embed_item(text=args.query)
+        scored = sorted(((float(np.dot(q, embed_item(text=d[1] if d[0] == "text" else None,
+                                                    image=d[1] if d[0] == "image" else None))), i)
+                         for i, d in enumerate(docs)), reverse=True)
+        for rank, (score, i) in enumerate(scored, 1):
+            print(f"{rank}. {score:+.4f}  {labels[i]}")
+        return
+
+    items = docs or [("text", args.query)]
+    vectors = [embed_item(text=d[1] if d[0] == "text" else None,
+                          image=d[1] if d[0] == "image" else None) for d in items]
+    if args.json:
+        payload = {"model": str(args.model), "dim": int(vectors[0].size),
+                   "pooling": pooling_name, "normalized": True,
+                   "embeddings": [{"text" if d[0] == "text" else "image": d[1],
+                                   "vector": v.tolist()}
+                                  for d, v in zip(items, vectors)]}
+        out = json.dumps(payload, ensure_ascii=False, indent=2)
+        if args.out:
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(out, encoding="utf-8")
+            print(f"[ovtool] {len(items)} vector(s), dim {vectors[0].size} -> {args.out}")
+        else:
+            print(out)
+        return
+    for d, v in zip(items, vectors):
+        print(f"dim={v.size}  norm={np.linalg.norm(v):.4f}  {_preview(v)}  {d[1]!r}")
+
+
 def run_embed(args: argparse.Namespace) -> None:
     import openvino_genai as ovgenai
 
     from .devices import resolve_device
     from .llm import compile_options
 
-    if not args.texts and not args.query:
-        raise SystemExit("nothing to embed: pass one or more texts, or --query")
+    if not args.texts and not args.query and not getattr(args, "image", None):
+        raise SystemExit("nothing to embed: pass one or more texts, an --image "
+                         "path, or --query")
     device = resolve_device(args.device)
+
+    if getattr(args, "image", None) or is_multimodal_export(args.model):
+        if getattr(args, "image", None) and not is_multimodal_export(args.model):
+            raise SystemExit("--image needs a multimodal (VL) embedder export, "
+                             "e.g. Qwen/Qwen3-VL-Embedding-2B")
+        pooling = args.pooling or read_pooling(args.model) or "last_token"
+        _run_embed_multimodal(ovgenai, args, device, pooling)
+        return
     auto_pool = read_pooling(args.model)
     qwen3 = is_qwen3(args.model)
     if qwen3 and auto_pool is None:
@@ -197,6 +273,9 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
                         formatter_class=argparse.RawDescriptionHelpFormatter)
     _common_args(p1)
     p1.add_argument("texts", nargs="*", default=[], help="Texts to embed (documents)")
+    p1.add_argument("-i", "--image", action="append", default=None, metavar="PATH",
+                    help="Image to embed, repeatable (multimodal embedders only, "
+                         "e.g. Qwen3-VL-Embedding); ranked against --query like texts")
     p1.add_argument("--query", default=None,
                     help="Embed one query (embed_query path); when combined with texts, "
                          "documents are ranked by cosine similarity to it")

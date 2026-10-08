@@ -235,6 +235,10 @@ def detect_kind(model_dir: Path) -> str | None:
         return "image"  # diffusers pipeline (component IRs in subfolders)
     if "openvino_vision_embeddings_model.xml" in names or \
             "openvino_text_embeddings_model.xml" in names:
+        # a VL embedder (e.g. Qwen3-VL-Embedding) has the same component IRs
+        # but ships the sentence-transformers pooling config
+        if (model_dir / "1_Pooling").is_dir():
+            return "embed"
         return "vlm"
     if "openvino_postnet.xml" in names or "openvino_vocoder.xml" in names:
         return "tts"  # SpeechT5 export: encoder/decoder/postnet/vocoder IRs
