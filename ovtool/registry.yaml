@@ -400,6 +400,31 @@ models:
         convert: "ovtool convert vlm google/gemma-4-E2B-it -o ./gemma4-e2b-it-fp16 --weight-format fp16"
 
 
+  - id: Qwen/Qwen3-Embedding-4B
+    kind: embed
+    match: ["qwen3-embedding-4b", "qwen3-emb-4b"]
+    variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed Qwen/Qwen3-Embedding-4B -o ./qwen3-emb-4b-fp16"
+        note: '2560-dim multilingual decoder embedder — LAST_TOKEN pooling and the official query instruction auto-applied by ovtool embed; int8 cosine ranking matches fp16'
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed Qwen/Qwen3-Embedding-4B --weight-format int8 -o ./qwen3-emb-4b-int8"
+        note: int8 embeddings are not bit-compatible with fp16 — index and queries must use the same variant
+
+  - id: Qwen/Qwen3-Reranker-4B
+    kind: rerank
+    match: ["qwen3-reranker-4b", "qwen3-rer-4b"]
+    variants:
+      int4-asym-g128:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm Qwen/Qwen3-Reranker-4B -o ./qwen3-rer-4b-int4"
+        note: converts via 'convert llm', NOT 'convert rerank'; official yes/no template auto-applied by ovtool rerank — verified P(yes) 0.999 relevant vs ≤0.003 irrelevant (en+zh, GPU+CPU)
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm Qwen/Qwen3-Reranker-4B --weight-format int8 -o ./qwen3-rer-4b-int8"
+
   - id: Qwen/Qwen3-Embedding-0.6B
     kind: embed
     match: ["qwen3-embedding"]
@@ -407,7 +432,7 @@ models:
       fp16:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert embed Qwen/Qwen3-Embedding-0.6B -o ./qwen3-emb-0.6b-fp16"
-        note: 1024-dim multilingual (top MTEB multilingual), decoder-based — LAST_TOKEN pooling and the official query instruction are auto-applied by 'ovtool embed'; 4B / 8B siblings convert the same way
+        note: 1024-dim multilingual (top MTEB multilingual), decoder-based — LAST_TOKEN pooling and the official query instruction are auto-applied by 'ovtool embed'
       int8:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert embed Qwen/Qwen3-Embedding-0.6B -o ./qwen3-emb-0.6b-int8 --weight-format int8"
@@ -419,7 +444,7 @@ models:
       int4-asym-g128:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert llm Qwen/Qwen3-Reranker-0.6B -o ./qwen3-rer-0.6b-int4"
-        note: converts via 'convert llm' (text-generation-with-past), NOT 'convert rerank'; 'ovtool rerank' detects the qwen3 model_type and applies the official yes/no instruction template automatically; scores are P(yes) — verified 0.99/0.97 relevant vs 0.01 irrelevant; 4B / 8B siblings convert the same way
+        note: converts via 'convert llm' (text-generation-with-past), NOT 'convert rerank'; 'ovtool rerank' detects the qwen3 model_type and applies the official yes/no instruction template automatically; scores are P(yes) — verified 0.99/0.97 relevant vs 0.01 irrelevant; the 8B sibling converts the same way
       int8:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert llm Qwen/Qwen3-Reranker-0.6B -o ./qwen3-rer-0.6b-int8 --weight-format int8"

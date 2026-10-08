@@ -86,6 +86,21 @@ def test_find_entry_matches_and_ordering():
     assert find_entry("totally/unknown-model") is None
 
 
+def test_find_entry_prefers_size_specific_entry():
+    """The 0.6B entries' generic matches ("qwen3-embedding") are substrings
+    of the 4B paths — the 4B entries sit earlier in the file so a 4B path
+    resolves to the 4B entry (same trap as gemma -it vs base)."""
+    assert find_entry("models/embed/Qwen3-Embedding-4B/fp16")["id"] == \
+        "Qwen/Qwen3-Embedding-4B"
+    assert find_entry("models/rerank/Qwen3-Reranker-4B/int4-asym-g128")["id"] == \
+        "Qwen/Qwen3-Reranker-4B"
+    # and the 0.6B paths still resolve to their own entries
+    assert find_entry("models/embed/Qwen3-Embedding-0.6B/fp16")["id"] == \
+        "Qwen/Qwen3-Embedding-0.6B"
+    assert find_entry("models/rerank/Qwen3-Reranker-0.6B/int4-asym-g128")["id"] == \
+        "Qwen/Qwen3-Reranker-0.6B"
+
+
 # ---------------- detect_kind on fabricated directories ---------------- #
 
 @pytest.mark.parametrize("kind,want", [

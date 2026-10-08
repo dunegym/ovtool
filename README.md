@@ -328,7 +328,9 @@ the official query instruction. `Qwen3-Reranker` converts via `convert llm`
 `ovtool rerank` detects the qwen3 model type and wraps query/documents in the
 official yes/no instruction template automatically (GenAI feeds them to the
 model verbatim, so without the template the scores are near-random).
-`--instruction` customizes the reranking task text.
+`--instruction` customizes the reranking task text. Verified sizes: 0.6B and
+4B (both in the [models repo](https://huggingface.co/dunegym/openvino-models),
+each embedder fp16/int8 and reranker int4/int8).
 
 ### `ovtool image` / `ovtool image2image` (Diffusion)
 
@@ -412,6 +414,8 @@ ovtool/
 - **Rerank — bge-reranker-v2-m3** (fp16, 568M multilingual): ✅ sigmoid scores rank a relevant English doc 0.9999 / Chinese doc 0.80 / irrelevant 0.0000 for an English query; `--top-n` verified on CPU
 - **Qwen3-Embedding-0.6B** (fp16 via `convert embed`, 1024-dim): ✅ LAST_TOKEN pooling + official query instruction auto-applied; cosine ranking correct across en+zh (relevant 0.81–0.83 vs irrelevant 0.23)
 - **Qwen3-Reranker-0.6B** (int4 via `convert llm`): ✅ official yes/no template auto-applied — P(yes) 0.986/0.969 for relevant en/zh docs vs 0.010 irrelevant (raw query+doc without the template scores near-random; never bypass it)
+- **Qwen3-Embedding-4B** (fp16 + int8 via `convert embed`, 2560-dim): ✅ int8 cosine ranking matches fp16 (relevant 0.73 vs irrelevant 0.24–0.31); LAST_TOKEN pooling auto-applied; CPU + iGPU
+- **Qwen3-Reranker-4B** (int4 + int8 via `convert llm`): ✅ P(yes) 0.999 relevant vs ≤0.003 irrelevant, en+zh queries, CPU + iGPU
 - **google/gemma-4-E2B-it** (VLM, effective-2B MatFormer with per-layer embeddings, full five-variant ladder): ✅ text (en+zh) and **image input** verified on int4-asym-g128 — ~26 tok/s CPU, ~20 tok/s GPU with 0.5s TTFT; the repo's own `chat_template.jinja` (tool-calling capable) renders fine in GenAI
 - The `vlm` multimodal path is implemented per the official openvino-genai API; image+text inference was not verified end-to-end (see known limitations)
 
