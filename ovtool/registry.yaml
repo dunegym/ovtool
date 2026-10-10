@@ -430,6 +430,10 @@ models:
     kind: rerank
     match: ["qwen3-reranker-4b", "qwen3-rer-4b"]
     variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm Qwen/Qwen3-Reranker-4B --weight-format fp16 -o ./qwen3-rer-4b-fp16"
+        note: 'quality reference tier — every reranker ships fp16 + int8 (Qwen3 adds int4-asym); verified P(yes) 0.999 relevant vs ≤0.001 irrelevant (en+zh, GPU+CPU)'
       int4-asym-g128:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert llm Qwen/Qwen3-Reranker-4B -o ./qwen3-rer-4b-int4"
@@ -454,6 +458,10 @@ models:
     kind: rerank
     match: ["qwen3-reranker"]
     variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert llm Qwen/Qwen3-Reranker-0.6B --weight-format fp16 -o ./qwen3-rer-0.6b-fp16"
+        note: quality reference tier — every reranker ships fp16 + int8 (Qwen3 adds int4-asym); verified P(yes) 1.00/0.999 relevant vs ≤0.016 irrelevant (en+zh, GPU+CPU)
       int4-asym-g128:
         devices: [CPU, GPU, AUTO]
         convert: "ovtool convert llm Qwen/Qwen3-Reranker-0.6B -o ./qwen3-rer-0.6b-int4"
