@@ -352,6 +352,19 @@ models:
         convert: "ovtool convert tts hexgrad/Kokoro-82M --trust-remote-code -o ./kokoro-fp16"
         note: export needs 'pip install kokoro' + --trust-remote-code; pick a voice with --speaker <name> from voices/*.bin (e.g. af_heart); languages en-us/en-gb end-to-end, es/fr-fr/hi/it/pt-br need espeak-ng, zh/ja not yet supported
 
+  - id: BAAI/bge-m3
+    kind: embed
+    match: ["bge-m3"]
+    variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed BAAI/bge-m3 --weight-format fp16 -o ./bge-m3-fp16"
+        note: '1024-dim multilingual (100+ languages, incl. zh) with 8192-token context, CLS pooling auto-applied; cross-lingual retrieval verified (zh query: zh doc 0.79 / en doc 0.56 / irrelevant 0.35); no query instruction needed'
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert embed BAAI/bge-m3 --weight-format int8 -o ./bge-m3-int8"
+        note: int8 ranking matches fp16; not bit-compatible — index and queries must use the same variant
+
   - id: BAAI/bge-small-en-v1.5
     kind: embed
     match: ["bge-small"]

@@ -431,6 +431,7 @@ ovtool/
 - **Qwen3-Embedding-4B** (fp16 + int8 via `convert embed`, 2560-dim): ✅ int8 cosine ranking matches fp16 (relevant 0.73 vs irrelevant 0.24–0.31); LAST_TOKEN pooling auto-applied; CPU + iGPU
 - **Qwen3-Reranker-4B** (int4 + int8 via `convert llm`): ✅ P(yes) 0.999 relevant vs ≤0.003 irrelevant, en+zh queries, CPU + iGPU
 - **Qwen3-VL-Embedding-2B** (fp16 + int8, multimodal): ✅ `EmbeddingPipeline` text+image in one 2048-dim space — text-text 0.76 vs 0.23, cross-modal 2×2 diagonal-dominant (dog query→corgi image 0.76 / cat image 0.22; cat query→cat image 0.62 / corgi image 0.22); int8 matches fp16; `ovtool embed -i` mixes texts and images in one ranking; CPU + iGPU
+- **BAAI/bge-m3** (fp16 + int8, 568M multilingual): ✅ CLS pooling auto-applied; en 0.78 vs 0.33; cross-lingual zh query → zh doc 0.79 / en doc 0.56 / irrelevant 0.35; int8 matches fp16; 8192-token context; CPU + iGPU
 - **google/gemma-4-E2B-it** (VLM, effective-2B MatFormer with per-layer embeddings, full five-variant ladder): ✅ text (en+zh) and **image input** verified on int4-asym-g128 — ~26 tok/s CPU, ~20 tok/s GPU with 0.5s TTFT; the repo's own `chat_template.jinja` (tool-calling capable) renders fine in GenAI
 - The `vlm` multimodal path is implemented per the official openvino-genai API; image+text inference was not verified end-to-end (see known limitations)
 

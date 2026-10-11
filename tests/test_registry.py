@@ -108,6 +108,12 @@ def test_find_entry_vl_embedding_and_vl_chat_do_not_collide():
         "Qwen/Qwen3-VL-2B-Instruct"
 
 
+def test_find_entry_bge_m3_and_bge_small_do_not_collide():
+    assert find_entry("models/embed/BGE-M3/fp16")["id"] == "BAAI/bge-m3"
+    assert find_entry("models/embed/BGE-small-en-v1.5/fp16")["id"] == \
+        "BAAI/bge-small-en-v1.5"
+
+
 # ---------------- detect_kind on fabricated directories ---------------- #
 
 @pytest.mark.parametrize("kind,want", [
