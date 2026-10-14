@@ -20,7 +20,7 @@ def parse_convert(argv):
 
 @pytest.mark.parametrize("kind,default_wf", [
     ("llm", "int4"), ("vlm", "int4"),
-    ("tts", "fp16"), ("embed", "fp16"), ("rerank", "fp16"),
+    ("tts", "fp16"), ("embed", "fp16"), ("rerank", "fp16"), ("asr", "fp16"),
 ])
 def test_default_weight_format_per_kind(kind, default_wf):
     args = parse_convert([kind, "Qwen/Qwen3-0.6B"])

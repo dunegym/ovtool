@@ -7,6 +7,7 @@ A multi-purpose inference CLI built on [OpenVINO GenAI](https://github.com/openv
 - **Browser WebUI**: pick any converted model, load it on a device and chat / generate images from the browser (`ovtool webui`)
 - **Multimodal (VLM) inference**: image + text Q&A (converted LLaVA / Qwen-VL / MiniCPM-V / InternVL models)
 - **Text-to-speech (TTS)**: SpeechT5 and Kokoro-82M synthesis to WAV, with speaker/voice selection, language and speed controls
+- **Speech recognition (ASR)**: Whisper-family transcription of any WAV (`ovtool asr` — auto downmix/resample, language forcing, `--task translate`, segment timestamps)
 - **Embeddings & reranking**: text vectorization (query/document modes, cosine retrieval ranking) and cross-encoder reranking for RAG pipelines
 - **Image generation**: Text2Image and Image2Image with the SD / SDXL / Flux families
 - **Device selection & runtime options**: CPU / GPU / NPU / AUTO / HETERO, with pass-through OpenVINO runtime properties
@@ -290,6 +291,22 @@ warning. Output is 16-bit PCM mono WAV at the model's native rate
 (verified ~10x: these are small autoregressive models where per-step iGPU
 overhead dominates). NPU is rejected by the registry (not supported upstream).
 
+### `ovtool asr` (Speech Recognition)
+
+```bash
+ovtool convert asr openai/whisper-small -o ./whisper-small-fp16   # fp16 by default
+
+# any WAV works: mono/stereo, any sample rate, 16-bit PCM or 32-bit float
+# (auto downmixed and resampled to the 16 kHz mono the model expects)
+ovtool asr -m ./whisper-small-fp16 -d CPU recording.wav
+ovtool asr -m ./whisper-small-fp16 -d GPU zh.wav --language zh --timestamps
+ovtool asr -m ./whisper-small-fp16 -d CPU jp.wav --task translate   # -> English
+```
+
+Multilingual models cover 99 languages (incl. zh); `.en` siblings are
+English-only but convert the same way. `--stats` reports realtime factor;
+`--initial-prompt` gives the decoder a style/hotword hint.
+
 ### `ovtool embed` / `ovtool rerank` (Retrieval)
 
 ```bash
@@ -432,6 +449,7 @@ ovtool/
 - **Qwen3-Reranker-4B** (int4 + int8 via `convert llm`): ✅ P(yes) 0.999 relevant vs ≤0.003 irrelevant, en+zh queries, CPU + iGPU
 - **Qwen3-VL-Embedding-2B** (fp16 + int8, multimodal): ✅ `EmbeddingPipeline` text+image in one 2048-dim space — text-text 0.76 vs 0.23, cross-modal 2×2 diagonal-dominant (dog query→corgi image 0.76 / cat image 0.22; cat query→cat image 0.62 / corgi image 0.22); int8 matches fp16; `ovtool embed -i` mixes texts and images in one ranking; CPU + iGPU
 - **BAAI/bge-m3** (fp16 + int8, 568M multilingual): ✅ CLS pooling auto-applied; en 0.78 vs 0.33; cross-lingual zh query → zh doc 0.79 / en doc 0.56 / irrelevant 0.35; int8 matches fp16; 8192-token context; CPU + iGPU
+- **ASR — openai/whisper-small** (fp16 + int8 via the new `convert asr`): ✅ TTS→ASR round-trip against our SpeechT5 output is verbatim-exact on fp16/int8 × CPU/iGPU; int8 iGPU 6.9× realtime (fp16 CPU 2.8×); `--timestamps` segments, `--task translate`, stereo-48k auto-resample all verified; new `ovtool asr` command routes through `ASRPipeline` (falls back to `WhisperPipeline` on older GenAI)
 - **google/gemma-4-E2B-it** (VLM, effective-2B MatFormer with per-layer embeddings, full five-variant ladder): ✅ text (en+zh) and **image input** verified on int4-asym-g128 — ~26 tok/s CPU, ~20 tok/s GPU with 0.5s TTFT; the repo's own `chat_template.jinja` (tool-calling capable) renders fine in GenAI
 - The `vlm` multimodal path is implemented per the official openvino-genai API; image+text inference was not verified end-to-end (see known limitations)
 

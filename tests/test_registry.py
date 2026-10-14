@@ -114,6 +114,10 @@ def test_find_entry_bge_m3_and_bge_small_do_not_collide():
         "BAAI/bge-small-en-v1.5"
 
 
+def test_find_entry_whisper():
+    assert find_entry("models/asr/whisper-small/fp16")["id"] == "openai/whisper-small"
+
+
 # ---------------- detect_kind on fabricated directories ---------------- #
 
 @pytest.mark.parametrize("kind,want", [
@@ -124,6 +128,18 @@ def test_find_entry_bge_m3_and_bge_small_do_not_collide():
 ])
 def test_detect_kind(tmp_path, kind, want):
     assert detect_kind(make_model(tmp_path / kind, kind)) == want
+
+
+def test_detect_kind_whisper_asr(tmp_path):
+    """Whisper export: encoder + decoder IRs (plus the tokenizer IRs the
+    pipeline needs)."""
+    d = tmp_path / "whisper"
+    d.mkdir()
+    for name in ("openvino_encoder_model.xml", "openvino_decoder_model.xml",
+                 "openvino_decoder_with_past_model.xml",
+                 "openvino_tokenizer.xml", "config.json"):
+        (d / name).write_text("<net/>", encoding="utf-8")
+    assert detect_kind(d) == "asr"
 
 
 def test_detect_kind_kokoro_by_voices_dir(tmp_path):

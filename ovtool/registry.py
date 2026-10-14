@@ -242,6 +242,10 @@ def detect_kind(model_dir: Path) -> str | None:
         return "vlm"
     if "openvino_postnet.xml" in names or "openvino_vocoder.xml" in names:
         return "tts"  # SpeechT5 export: encoder/decoder/postnet/vocoder IRs
+    if "openvino_encoder_model.xml" in names and \
+            any(n.startswith("openvino_decoder") and n.endswith(".xml")
+                for n in names):
+        return "asr"   # Whisper export: encoder + decoder (+with_past) IRs
     if "openvino_language_model.xml" in names or "openvino_model.xml" in names:
         if _config_model_type(model_dir) == "kokoro" or \
                 (model_dir / "voices").is_dir():

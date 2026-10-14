@@ -101,6 +101,15 @@ def _pick_embed_cls():
     return cls
 
 
+def _pick_asr_cls():
+    """Whisper-style encoder/decoder speech models."""
+    try:
+        from optimum.intel import OVModelForSpeechSeq2Seq as cls
+    except ImportError as e:
+        raise _hint("optimum-intel") from e
+    return cls
+
+
 def _pick_rerank_cls():
     try:
         from optimum.intel import OVModelForSequenceClassification as cls
@@ -407,6 +416,9 @@ def run_convert(args: argparse.Namespace) -> None:
     elif args.kind == "embed":
         cls = _pick_embed_cls()
         load_kwargs.pop("use_cache", None)
+    elif args.kind == "asr":
+        cls = _pick_asr_cls()
+        load_kwargs.pop("use_cache", None)
     elif args.kind == "rerank":
         cls = _pick_rerank_cls()
         load_kwargs.pop("use_cache", None)
@@ -446,7 +458,7 @@ def run_convert(args: argparse.Namespace) -> None:
     print(f"\nDone. OpenVINO IR written to: {out.resolve()}")
     print("Run inference with: ovtool " +
           {"llm": "chat", "vlm": "vlm", "image": "image",
-           "embed": "embed", "rerank": "rerank"}[args.kind] +
+           "embed": "embed", "rerank": "rerank", "asr": "asr"}[args.kind] +
           f" -m {out}")
 
 
@@ -462,7 +474,8 @@ def add_convert_parser(sub: argparse._SubParsersAction) -> None:
                                    "  ovtool convert embed BAAI/bge-small-en-v1.5 -o ./bge-small\n"
                                    "  ovtool convert rerank BAAI/bge-reranker-v2-m3 -o ./bge-reranker",
                        formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("kind", choices=["llm", "vlm", "image", "tts", "embed", "rerank"],
+    p.add_argument("kind", choices=["llm", "vlm", "image", "tts", "embed", "rerank",
+                                    "asr"],
                    help="Model family")
     p.add_argument("model", help="Hugging Face model id or local path")
     p.add_argument("-o", "--output", default=None, help="Output dir (default: ./<basename>-<wf>)")
@@ -485,7 +498,7 @@ def add_convert_parser(sub: argparse._SubParsersAction) -> None:
         if args.weight_format is None:
             # small quantization-sensitive families keep fp16 by default
             args.weight_format = "fp16" \
-                if args.kind in ("tts", "embed", "rerank") else "int4"
+                if args.kind in ("tts", "embed", "rerank", "asr") else "int4"
         if args.output is None:
             base = args.model.rstrip("/").split("/")[-1]
             args.output = f"./{base}-{args.weight_format}"

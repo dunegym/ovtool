@@ -352,6 +352,19 @@ models:
         convert: "ovtool convert tts hexgrad/Kokoro-82M --trust-remote-code -o ./kokoro-fp16"
         note: export needs 'pip install kokoro' + --trust-remote-code; pick a voice with --speaker <name> from voices/*.bin (e.g. af_heart); languages en-us/en-gb end-to-end, es/fr-fr/hi/it/pt-br need espeak-ng, zh/ja not yet supported
 
+  - id: openai/whisper-small
+    kind: asr
+    match: ["whisper-small"]
+    variants:
+      fp16:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert asr openai/whisper-small --weight-format fp16 -o ./whisper-small-fp16"
+        note: 'multilingual (99 languages incl. zh) speech recognition; ovtool asr transcribes any WAV (auto downmix + resample to 16k mono); round-trip verified against our SpeechT5 output — exact transcript; --task translate renders into English, --timestamps prints segments; .en siblings (English-only) convert the same way'
+      int8:
+        devices: [CPU, GPU, AUTO]
+        convert: "ovtool convert asr openai/whisper-small --weight-format int8 -o ./whisper-small-int8"
+        note: identical transcripts to fp16 on the round-trip test and ~2.5x faster on iGPU — the recommended tier
+
   - id: BAAI/bge-m3
     kind: embed
     match: ["bge-m3"]
