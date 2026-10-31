@@ -6,7 +6,22 @@ build-backend = "setuptools.build_meta"
 name = "ovtool"
 dynamic = ["version"]
 description = "Comprehensive OpenVINO GenAI command-line tool: LLM/VLM inference, image generation, model conversion and quantization"
+readme = "README.md"
 requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
 dependencies = [
     "openvino>=2025.3",
     "openvino-genai>=2025.3",
@@ -19,6 +34,10 @@ dependencies = [
     "tiktoken",
     "pypdf",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dunegym/ovtool"
+Issues = "https://github.com/dunegym/ovtool/issues"
 
 [project.optional-dependencies]
 convert = ["optimum-intel[openvino]>=1.20", "onnx", "diffusers", "transformers"]
