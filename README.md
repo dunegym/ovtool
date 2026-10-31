@@ -16,6 +16,10 @@ A multi-purpose inference CLI built on [OpenVINO GenAI](https://github.com/openv
 ## Setup
 
 ```bash
+# from PyPI (published as https://pypi.org/project/ovtool/)
+pip install ovtool
+
+# or from a checkout, editable:
 conda create -n openvino-cli python=3.11 -y -c conda-forge --override-channels
 conda activate openvino-cli
 pip install -e .            # inference deps (openvino / openvino-genai / openvino-tokenizers)
@@ -31,7 +35,7 @@ pip install -e ".[test]"
 pytest
 ```
 
-The suite (~180 tests) exercises ovtool's own logic — registry gating, RAG
+The suite (~200 tests) exercises ovtool's own logic — registry gating, RAG
 chunking / storage / retrieval (with a stub embedder), text extraction,
 quant-config building, CLI wiring and the webui/serve handler plumbing — so
 it needs **no models and no GPU/NPU**. CI runs it on every push and pull
@@ -412,16 +416,20 @@ note).
 
 ```
 ovtool/
-├── cli.py        # Entry point & subcommand registration
-├── devices.py    # Device enumeration / validation
-├── convert.py    # optimum-intel export + weight quantization
-├── llm.py        # LLMPipeline: generate / chat
-├── server.py     # OpenAI-compatible API server (serve)
-├── webui.py/.html# Browser UI (webui)
-├── vlm.py        # VLMPipeline: image-text multimodal
-├── tts.py        # Text2SpeechPipeline: SpeechT5 / Kokoro speech synthesis
-├── embed.py      # TextEmbeddingPipeline / TextRerankPipeline: retrieval
-└── imagegen.py   # Text2Image / Image2Image
+├── cli.py          # Entry point & subcommand registration
+├── devices.py      # Device enumeration / validation
+├── registry.py/.yaml  # Model compatibility registry (gate + local model discovery)
+├── convert.py      # optimum-intel export + weight quantization
+├── download.py     # Hugging Face Hub downloads (incl. hf-mirror endpoint)
+├── llm.py          # LLMPipeline: generate / chat
+├── server.py       # OpenAI-compatible API server (serve)
+├── webui.py/.html  # Browser UI (webui)
+├── vlm.py          # VLMPipeline: image-text multimodal
+├── tts.py          # Text2SpeechPipeline: SpeechT5 / Kokoro speech synthesis
+├── asr.py          # ASRPipeline / WhisperPipeline: speech recognition
+├── embed.py        # TextEmbeddingPipeline / TextRerankPipeline: retrieval
+├── rag.py          # Knowledge bases for retrieval-augmented chat (webui RAG)
+└── imagegen.py     # Text2Image / Image2Image
 ```
 
 ## Verified (local machine: Core Ultra 5 125H + Arc Pro iGPU + NPU 3720)

@@ -11,3 +11,6 @@ __pycache__/
 generated-webui/
 downloads/
 .playwright-mcp/
+# python packaging artifacts
+dist/
+build/
